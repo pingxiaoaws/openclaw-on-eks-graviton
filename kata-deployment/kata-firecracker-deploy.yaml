@@ -1,0 +1,300 @@
+---
+# Namespace for Kata Containers
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kata-system
+
+---
+# ConfigMap for Kata Firecracker configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kata-firecracker-config
+  namespace: kata-system
+data:
+  configuration.toml: |
+    # Kata Containers Configuration - Firecracker Backend
+
+    [hypervisor.firecracker]
+    path = "/opt/kata/bin/firecracker"
+    kernel = "/opt/kata/share/kata-containers/vmlinux.container"
+    image = "/opt/kata/share/kata-containers/kata-containers.img"
+
+    # Firecracker 特定配置
+    # 启动时间优化
+    jailer_path = "/opt/kata/bin/jailer"
+    valid_jailer_paths = ["/opt/kata/bin/jailer"]
+
+    # 内存配置 (MB)
+    default_memory = 2048
+    memory_offset = 0
+
+    # vCPU 配置
+    default_vcpus = 2
+
+    # 网络配置
+    # Firecracker 使用 tc redirect 或 macvtap
+    internetworking_model = "tcfilter"
+
+    # 块设备配置
+    # virtio-blk 性能更好
+    block_device_driver = "virtio-blk"
+
+    # 共享文件系统
+    # virtio-fs 性能最佳
+    shared_fs = "virtio-fs"
+    virtio_fs_daemon = "/opt/kata/libexec/virtiofsd"
+
+    # 安全配置
+    # Firecracker 的 seccomp 过滤
+    enable_annotations = [".*"]
+
+    # 内核参数
+    kernel_params = "systemd.unit=kata-containers.target systemd.mask=systemd-networkd.service systemd.mask=systemd-networkd.socket"
+
+    # 设备热插拔 (Firecracker 有限支持)
+    hotplug_vfio_on_root_bus = false
+
+    # 日志
+    enable_debug = false
+
+    [runtime]
+    # Runtime 配置
+    enable_debug = false
+    internetworking_model = "tcfilter"
+
+    # 沙箱 cgroup
+    sandbox_cgroup_only = false
+
+    # vCPU 和内存热插拔 (Firecracker 不支持)
+    enable_cpu_memory_hotplug = false
+
+    # Guest 保护 (AWS Nitro Enclaves)
+    # 需要特殊实例类型
+    # confidential_guest = false
+
+    # I/O 配置
+    disable_block_device_use = false
+
+    # 实验性功能
+    experimental = []
+
+---
+# DaemonSet to install Kata Containers with Firecracker
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kata-firecracker-deploy
+  namespace: kata-system
+spec:
+  selector:
+    matchLabels:
+      app: kata-firecracker-deploy
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: kata-firecracker-deploy
+    spec:
+      hostPID: true
+      nodeSelector:
+        katacontainers.io/kata-runtime: "true"
+      tolerations:
+        - key: kata-dedicated
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        # Init 1: 安装 Kata Containers 基础组件
+        - name: kata-artifacts
+          image: quay.io/kata-containers/kata-deploy:3.10.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "=== Installing Kata Containers artifacts ==="
+
+              # Create directories
+              mkdir -p /opt/kata/bin
+              mkdir -p /opt/kata/share/kata-containers
+              mkdir -p /opt/kata/libexec
+              mkdir -p /etc/kata-containers
+
+              # Copy Kata binaries
+              cp -a /opt/kata/artifacts/bin/* /opt/kata/bin/
+              cp -a /opt/kata/artifacts/share/* /opt/kata/share/
+
+              # Copy Kata libexec (virtiofsd)
+              if [ -d /opt/kata/artifacts/libexec ]; then
+                cp -a /opt/kata/artifacts/libexec/* /opt/kata/libexec/
+              fi
+
+              echo "✓ Kata artifacts installed"
+              ls -lh /opt/kata/bin/
+          volumeMounts:
+            - name: kata-install-dir
+              mountPath: /opt/kata
+            - name: kata-config-dir
+              mountPath: /etc/kata-containers
+
+        # Init 2: 安装 Firecracker
+        - name: firecracker-install
+          image: public.ecr.aws/docker/library/alpine:3.19
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "=== Installing Firecracker ==="
+
+              # Install dependencies
+              apk add --no-cache curl tar
+
+              # Download Firecracker
+              FIRECRACKER_VERSION="v1.7.0"
+              ARCH="x86_64"
+
+              cd /tmp
+              curl -fsSL https://github.com/firecracker-microvm/firecracker/releases/download/${FIRECRACKER_VERSION}/firecracker-${FIRECRACKER_VERSION}-${ARCH}.tgz -o firecracker.tgz
+
+              tar xzf firecracker.tgz
+
+              # Install binaries
+              cp release-${FIRECRACKER_VERSION}-${ARCH}/firecracker-${FIRECRACKER_VERSION}-${ARCH} /opt/kata/bin/firecracker
+              cp release-${FIRECRACKER_VERSION}-${ARCH}/jailer-${FIRECRACKER_VERSION}-${ARCH} /opt/kata/bin/jailer
+
+              chmod +x /opt/kata/bin/firecracker
+              chmod +x /opt/kata/bin/jailer
+
+              echo "✓ Firecracker installed"
+              /opt/kata/bin/firecracker --version
+          volumeMounts:
+            - name: kata-install-dir
+              mountPath: /opt/kata
+
+        # Init 3: 配置 Kata Firecracker
+        - name: kata-config
+          image: public.ecr.aws/docker/library/busybox:1.37
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "=== Configuring Kata Firecracker ==="
+
+              # Copy configuration
+              cp /kata-config/configuration.toml /etc/kata-containers/configuration-fc.toml
+
+              # Create symlink for default config
+              ln -sf /etc/kata-containers/configuration-fc.toml /etc/kata-containers/configuration.toml
+
+              echo "✓ Kata Firecracker configured"
+              cat /etc/kata-containers/configuration.toml | head -20
+          volumeMounts:
+            - name: kata-config-dir
+              mountPath: /etc/kata-containers
+            - name: kata-firecracker-config
+              mountPath: /kata-config
+
+        # Init 4: 配置 containerd
+        - name: configure-containerd
+          image: public.ecr.aws/docker/library/busybox:1.37
+          securityContext:
+            privileged: true
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "=== Configuring containerd for Kata Firecracker ==="
+
+              # Backup original config
+              if [ ! -f /etc/containerd/config.toml.bak ]; then
+                cp /etc/containerd/config.toml /etc/containerd/config.toml.bak
+              fi
+
+              # Add Kata Firecracker runtime to containerd config
+              cat >> /etc/containerd/config.toml <<EOF
+
+              # Kata Containers with Firecracker backend
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc]
+                runtime_type = "io.containerd.kata.v2"
+                privileged_without_host_devices = true
+
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc.options]
+                ConfigPath = "/etc/kata-containers/configuration-fc.toml"
+              EOF
+
+              echo "✓ Containerd configured for Kata Firecracker"
+
+              # Restart containerd
+              echo "Restarting containerd..."
+              nsenter --target 1 --mount --uts --ipc --net --pid -- systemctl restart containerd
+
+              echo "✓ Containerd restarted"
+          volumeMounts:
+            - name: containerd-config
+              mountPath: /etc/containerd
+
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          imagePullPolicy: IfNotPresent
+
+      volumes:
+        - name: kata-install-dir
+          hostPath:
+            path: /opt/kata
+            type: DirectoryOrCreate
+        - name: kata-config-dir
+          hostPath:
+            path: /etc/kata-containers
+            type: DirectoryOrCreate
+        - name: kata-firecracker-config
+          configMap:
+            name: kata-firecracker-config
+        - name: containerd-config
+          hostPath:
+            path: /etc/containerd
+            type: Directory
+
+---
+# RuntimeClass for Kata Firecracker
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata-fc
+handler: kata-fc
+scheduling:
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+  tolerations:
+    - key: kata-dedicated
+      operator: Exists
+      effect: NoSchedule
+
+---
+# RuntimeClass alias: kata (points to kata-fc)
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata
+handler: kata-fc
+scheduling:
+  nodeSelector:
+    katacontainers.io/kata-runtime: "true"
+  tolerations:
+    - key: kata-dedicated
+      operator: Exists
+      effect: NoSchedule

@@ -1,0 +1,17 @@
+# Minimal OpenClawInstance example
+apiVersion: openclaw.rocks/v1alpha1
+kind: OpenClawInstance
+metadata:
+  name: my-openclaw
+  namespace: default
+spec:
+  # Reference your API keys secret
+  envFrom:
+    - secretRef:
+        name: openclaw-api-keys  # Create this secret with your API keys
+
+  # Minimal config - uses defaults for everything else
+  storage:
+    persistence:
+      enabled: true
+      size: 10Gi

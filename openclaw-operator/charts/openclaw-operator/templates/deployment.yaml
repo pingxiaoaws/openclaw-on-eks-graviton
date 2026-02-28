@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openclaw-operator.fullname" . }}
+  labels:
+    {{- include "openclaw-operator.labels" . | nindent 4 }}
+    control-plane: controller-manager
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "openclaw-operator.selectorLabels" . | nindent 6 }}
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "openclaw-operator.labels" . | nindent 8 }}
+        control-plane: controller-manager
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "openclaw-operator.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: manager
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default (printf "v%s" .Chart.AppVersion) }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /manager
+          args:
+            {{- if .Values.leaderElection.enabled }}
+            - --leader-elect
+            {{- end }}
+            - --health-probe-bind-address=:8081
+            {{- if .Values.metrics.enabled }}
+            - --metrics-bind-address={{ .Values.metrics.bindAddress }}
+            {{- if .Values.metrics.secure }}
+            - --metrics-secure=true
+            {{- end }}
+            {{- else }}
+            - --metrics-bind-address=0
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: 8443
+              protocol: TCP
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 10

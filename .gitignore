@@ -1,0 +1,41 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+bin/
+testbin/
+
+# Test coverage
+*.out
+cover.out
+coverage.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Operator
+openclaw-operator/bin/
+openclaw-operator/testbin/
+
+# Local development
+.envrc
+.env
+*.local

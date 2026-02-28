@@ -1,0 +1,208 @@
+# Full OpenClawInstance example with all options
+apiVersion: openclaw.rocks/v1alpha1
+kind: OpenClawInstance
+metadata:
+  name: production-openclaw
+  namespace: openclaw
+  labels:
+    environment: production
+spec:
+  # Container image configuration
+  image:
+    repository: ghcr.io/openclaw/openclaw
+    tag: "2026.2.3"
+    pullPolicy: IfNotPresent
+    # pullSecrets:
+    #   - name: ghcr-pull-secret
+
+  # Provider-agnostic configuration
+  # Option A: Reference external ConfigMap with your openclaw.json
+  # config:
+  #   configMapRef:
+  #     name: my-openclaw-config
+  #     key: openclaw.json
+
+  # Option B: Inline raw config (any valid openclaw.json content)
+  config:
+    raw:
+      agents:
+        defaults:
+          model:
+            primary: "anthropic/claude-sonnet-4-20250514"
+          sandbox: true
+      session:
+        scope: "per-sender"
+
+  # Environment variables for API keys and configuration
+  envFrom:
+    - secretRef:
+        name: openclaw-api-keys  # Contains ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
+
+  # Gateway authentication — use an existing Secret instead of auto-generation
+  # The Secret must have a key named "token"
+  # gateway:
+  #   existingSecret: my-gateway-token
+
+  env:
+    # If gateway.existingSecret is not set, OPENCLAW_GATEWAY_TOKEN is auto-injected.
+    # Override manually only if you need a specific value:
+    # - name: OPENCLAW_GATEWAY_TOKEN
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: gateway-token
+    #       key: token
+    - name: OPENCLAW_DISABLE_BONJOUR
+      value: "1"
+
+  # Resource requirements
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+  # Security configuration
+  security:
+    podSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      runAsNonRoot: true
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      capabilities:
+        drop:
+          - ALL
+    networkPolicy:
+      enabled: true
+      allowedIngressNamespaces:
+        - ingress-nginx
+      allowedIngressCIDRs:
+        - 10.0.0.0/8
+      allowDNS: true
+    rbac:
+      createServiceAccount: true
+
+  # Storage configuration
+  storage:
+    persistence:
+      enabled: true
+      storageClass: premium-rwo
+      size: 50Gi
+      accessModes:
+        - ReadWriteOnce
+
+  # Chromium sidecar for browser automation
+  chromium:
+    enabled: true
+    image:
+      repository: ghcr.io/browserless/chromium
+      tag: "v2.0.0"
+      # Recommended: pin to a specific digest
+      # digest: "sha256:abc123..."
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+
+  # Custom sidecar containers
+  # sidecars:
+  #   - name: cloud-sql-proxy
+  #     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.3
+  #     args:
+  #       - "--structured-logs"
+  #       - "my-project:us-central1:my-db"
+  #     ports:
+  #       - containerPort: 5432
+  #     resources:
+  #       requests:
+  #         cpu: "100m"
+  #         memory: "128Mi"
+  #       limits:
+  #         cpu: "500m"
+  #         memory: "256Mi"
+  #     securityContext:
+  #       runAsNonRoot: true
+  # sidecarVolumes:
+  #   - name: proxy-creds
+  #     secret:
+  #       secretName: cloud-sql-proxy-sa
+
+  # Networking configuration
+  networking:
+    service:
+      type: ClusterIP
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+    ingress:
+      enabled: true
+      className: nginx
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts:
+        - host: openclaw.internal.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: openclaw-tls
+          hosts:
+            - openclaw.internal.example.com
+      security:
+        forceHTTPS: true
+        enableHSTS: true
+        rateLimiting:
+          enabled: true
+          requestsPerSecond: 50
+
+  # Health probes
+  probes:
+    liveness:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readiness:
+      enabled: true
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+    startup:
+      enabled: true
+      periodSeconds: 5
+      failureThreshold: 60
+
+  # Observability
+  observability:
+    metrics:
+      enabled: true
+      port: 9090
+      serviceMonitor:
+        enabled: true
+        interval: 15s
+        labels:
+          release: prometheus
+    logging:
+      level: info
+      format: json
+
+  # High availability
+  availability:
+    podDisruptionBudget:
+      enabled: true
+      maxUnavailable: 1
+    nodeSelector:
+      node-type: application
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: openclaw
+        effect: NoSchedule

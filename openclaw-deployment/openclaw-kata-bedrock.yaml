@@ -1,0 +1,83 @@
+apiVersion: openclaw.rocks/v1alpha1
+kind: OpenClawInstance
+metadata:
+  name: openclaw-kata-bedrock
+  namespace: openclaw
+spec:
+  # Image configuration
+  image:
+    repository: ghcr.io/openclaw/openclaw
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  # Bedrock configuration
+  config:
+    raw:
+      agents:
+        defaults:
+          model:
+            primary: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+  # AWS credentials for Bedrock
+  envFrom:
+    - secretRef:
+        name: aws-credentials
+
+  # Resource requirements (increased for Kata VM overhead)
+  resources:
+    requests:
+      cpu: "600m"      # +100m for VM overhead
+      memory: "1.2Gi"  # +200Mi for VM overhead
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  # Schedule to Kata nodes with Kata runtime
+  availability:
+    runtimeClassName: kata-fc
+    nodeSelector:
+      workload-type: kata
+    tolerations:
+      - key: kata-dedicated
+        operator: Exists
+        effect: NoSchedule
+
+  # Storage
+  storage:
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: gp3
+
+  # Networking
+  networking:
+    service:
+      type: ClusterIP
+
+  # Security - enhanced with Kata VM isolation
+  security:
+    podSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      runAsNonRoot: true
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      capabilities:
+        drop:
+          - ALL
+    networkPolicy:
+      enabled: true
+      allowDNS: true
+    rbac:
+      createServiceAccount: true
+
+  # Observability
+  observability:
+    metrics:
+      enabled: true
+      port: 9090
+    logging:
+      level: info
+      format: json

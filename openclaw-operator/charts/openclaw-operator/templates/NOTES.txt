@@ -1,0 +1,61 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }}
+  $ helm get all {{ .Release.Name }}
+
+## Upgrading from versions that used crds/ directory
+
+If you are upgrading from a chart version that installed CRDs via the Helm
+crds/ directory (prior to this version), you must adopt the existing CRDs
+into Helm management before upgrading:
+
+  kubectl label crd openclawinstances.openclaw.rocks app.kubernetes.io/managed-by=Helm
+  kubectl annotate crd openclawinstances.openclaw.rocks meta.helm.sh/release-name={{ .Release.Name }} meta.helm.sh/release-namespace={{ .Release.Namespace }}
+  kubectl label crd openclawselfconfigs.openclaw.rocks app.kubernetes.io/managed-by=Helm
+  kubectl annotate crd openclawselfconfigs.openclaw.rocks meta.helm.sh/release-name={{ .Release.Name }} meta.helm.sh/release-namespace={{ .Release.Namespace }}
+
+This is only needed once. After this, CRDs will be updated automatically
+on every `helm upgrade`.
+
+## Quick Start
+
+1. Create a secret with your API keys:
+
+   kubectl create secret generic openclaw-api-keys \
+     --from-literal=ANTHROPIC_API_KEY=your-key-here \
+     --from-literal=OPENAI_API_KEY=your-key-here
+
+2. Create an OpenClawInstance:
+
+   cat <<EOF | kubectl apply -f -
+   apiVersion: openclaw.rocks/v1alpha1
+   kind: OpenClawInstance
+   metadata:
+     name: my-openclaw
+   spec:
+     envFrom:
+       - secretRef:
+           name: openclaw-api-keys
+     storage:
+       persistence:
+         enabled: true
+         size: 10Gi
+   EOF
+
+3. Check the status:
+
+   kubectl get openclawinstances
+
+## Documentation
+
+For more information, visit:
+https://github.com/OpenClaw-rocks/k8s-operator
+
+## Getting Help
+
+If you encounter any issues, please file an issue at:
+https://github.com/OpenClaw-rocks/k8s-operator/issues

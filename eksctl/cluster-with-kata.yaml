@@ -1,0 +1,194 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: openclaw-kata-cluster
+  region: us-west-2
+  version: "1.34"
+
+# VPC Configuration
+vpc:
+  cidr: 172.31.0.0/16
+  nat:
+    gateway: Single  # Single NAT Gateway for cost optimization
+
+# IAM Configuration
+iam:
+  withOIDC: true  # Enable OIDC for IRSA (IAM Roles for Service Accounts)
+
+# Managed Node Group for Standard Workloads
+managedNodeGroups:
+  - name: standard-nodegroup
+    instanceType: m5.large
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 4
+    volumeSize: 80
+    volumeType: gp3
+    privateNetworking: true
+    labels:
+      workload-type: standard
+    tags:
+      k8s.io/cluster-autoscaler/enabled: "true"
+      k8s.io/cluster-autoscaler/openclaw-kata-cluster: "owned"
+    iam:
+      withAddonPolicies:
+        ebs: true
+        efs: true
+        albIngress: true
+        cloudWatch: true
+
+# Unmanaged Node Group for Kata Containers on Graviton Metal
+nodeGroups:
+  - name: kata-graviton-metal
+    instanceType: c6g.metal
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 3
+    volumeSize: 200
+    volumeType: gp3
+    volumeEncrypted: true
+    privateNetworking: true
+
+    # AMI Configuration - Ubuntu 24.04 LTS ARM64
+    ami: ami-014c6b7d15a2526d2
+    amiFamily: Ubuntu2404
+
+    # SSH Access (optional, for debugging)
+    ssh:
+      allow: true
+      publicKeyPath: ~/.ssh/id_rsa.pub
+
+    # User Data for Kata Containers Installation
+    preBootstrapCommands:
+      - |
+        #!/bin/bash
+        set -ex
+
+        echo "=== Installing Kata Containers 3.27.0 with Firecracker ==="
+
+        # Update system
+        apt-get update && apt-get upgrade -y
+
+        # Install required packages
+        apt-get install -y \
+          apt-transport-https \
+          ca-certificates \
+          curl \
+          gnupg \
+          lsb-release \
+          jq \
+          device-mapper-persistent-data \
+          thin-provisioning-tools
+
+        # Install containerd from Kata Containers repo
+        echo "deb [signed-by=/usr/share/keyrings/kata-containers-archive-keyring.gpg] https://download.opensuse.org/repositories/home:/katacontainers:/releases:/aarch64:/stable-3.x/xUbuntu_24.04/ /" | \
+          tee /etc/apt/sources.list.d/kata-containers.list
+
+        curl -fsSL https://download.opensuse.org/repositories/home:/katacontainers:/releases:/aarch64:/stable-3.x/xUbuntu_24.04/Release.key | \
+          gpg --dearmor -o /usr/share/keyrings/kata-containers-archive-keyring.gpg
+
+        apt-get update
+        apt-get install -y kata-containers
+
+        # Configure containerd for Kata
+        mkdir -p /etc/containerd
+        containerd config default > /etc/containerd/config.toml
+
+        # Add Kata runtime configuration
+        cat >> /etc/containerd/config.toml <<EOF
+
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc]
+          runtime_type = "io.containerd.kata-fc.v2"
+          privileged_without_host_devices = true
+          pod_annotations = ["io.katacontainers.*"]
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc.options]
+            ConfigPath = "/opt/kata/share/defaults/kata-containers/configuration-fc.toml"
+        EOF
+
+        # Configure Kata to use devmapper snapshotter
+        mkdir -p /var/lib/kata-devmapper
+
+        # Create thin pool for devmapper
+        if [ ! -e /dev/mapper/kata-thin-pool ]; then
+          # Find the root device
+          ROOT_DEVICE=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//')
+
+          # Create physical volume and volume group
+          pvcreate ${ROOT_DEVICE}2
+          vgcreate kata-vg ${ROOT_DEVICE}2
+
+          # Create thin pool (80% of VG)
+          lvcreate -L 160G -T kata-vg/kata-thin-pool
+        fi
+
+        # Update Kata configuration for Firecracker
+        sed -i 's/^#kernel = .*/kernel = "\/opt\/kata\/share\/kata-containers\/vmlinux-6.18.12-133"/' \
+          /opt/kata/share/defaults/kata-containers/configuration-fc.toml
+
+        sed -i 's/^#initrd = .*/initrd = "\/opt\/kata\/share\/kata-containers\/kata-containers-initrd.img"/' \
+          /opt/kata/share/defaults/kata-containers/configuration-fc.toml
+
+        # Restart containerd
+        systemctl restart containerd
+        systemctl enable containerd
+
+        echo "=== Kata Containers installation completed ==="
+
+    # Labels for scheduling
+    labels:
+      workload-type: kata
+      katacontainers.io/kata-runtime: "true"
+      arch: arm64
+      os: ubuntu
+
+    # Taints to dedicate nodes for Kata workloads
+    taints:
+      - key: kata-dedicated
+        value: "true"
+        effect: NoSchedule
+
+    # Tags for AWS resources
+    tags:
+      Name: kata-graviton-metal-node
+      Environment: production
+      Runtime: kata-containers
+      Hypervisor: firecracker
+
+    # IAM policies
+    iam:
+      withAddonPolicies:
+        ebs: true
+        cloudWatch: true
+        albIngress: true
+
+# Add-ons
+addons:
+  - name: vpc-cni
+    version: latest
+    resolveConflicts: overwrite
+
+  - name: coredns
+    version: latest
+    resolveConflicts: overwrite
+
+  - name: kube-proxy
+    version: latest
+    resolveConflicts: overwrite
+
+  - name: aws-ebs-csi-driver
+    version: latest
+    resolveConflicts: overwrite
+    wellKnownPolicies:
+      ebsCSIController: true
+
+# CloudWatch logging
+cloudWatch:
+  clusterLogging:
+    enableTypes:
+      - api
+      - audit
+      - authenticator
+      - controllerManager
+      - scheduler
+    logRetentionInDays: 7
