@@ -39,6 +39,12 @@ def create_app():
     app.register_blueprint(delete_bp)
     app.register_blueprint(health_bp)
 
+    # Register blueprints again with /prod prefix for API Gateway
+    app.register_blueprint(provision_bp, url_prefix='/prod')
+    app.register_blueprint(status_bp, url_prefix='/prod')
+    app.register_blueprint(delete_bp, url_prefix='/prod')
+    app.register_blueprint(health_bp, url_prefix='/prod')
+
     # Frontend routes
     @app.route('/')
     def index():
