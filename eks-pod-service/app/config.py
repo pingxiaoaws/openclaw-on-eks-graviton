@@ -1,5 +1,16 @@
 """Application configuration"""
 import os
+import json
+
+def _parse_json_env(key, default):
+    """Parse JSON from environment variable"""
+    value = os.environ.get(key)
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
 
 class Config:
     """Application configuration"""
@@ -11,25 +22,25 @@ class Config:
     # Kubernetes
     K8S_NAMESPACE_PREFIX = 'openclaw'
 
-    # OpenClaw Instance 默认配置
+    # OpenClaw Instance 默认配置 (支持环境变量覆盖)
     OPENCLAW_DEFAULTS = {
-        'runtime_class': 'kata-fc',
-        'node_selector': {'workload-type': 'kata'},
-        'tolerations': [
-            {
-                'key': 'kata-dedicated',
-                'operator': 'Exists',
-                'effect': 'NoSchedule'
-            }
-        ],
+        'runtime_class': os.environ.get('OPENCLAW_RUNTIME_CLASS') or None,
+        'node_selector': _parse_json_env('OPENCLAW_NODE_SELECTOR', {}),
+        'tolerations': _parse_json_env('OPENCLAW_TOLERATIONS', []),
         'resources': {
-            'requests': {'cpu': '600m', 'memory': '1.2Gi'},
-            'limits': {'cpu': '2', 'memory': '4Gi'}
+            'requests': {
+                'cpu': os.environ.get('OPENCLAW_CPU_REQUEST', '600m'),
+                'memory': os.environ.get('OPENCLAW_MEMORY_REQUEST', '1.2Gi')
+            },
+            'limits': {
+                'cpu': os.environ.get('OPENCLAW_CPU_LIMIT', '2'),
+                'memory': os.environ.get('OPENCLAW_MEMORY_LIMIT', '4Gi')
+            }
         },
-        'storage_size': '10Gi',
-        'storage_class': 'gp3',
-        'model': 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-        'aws_credentials_secret': 'aws-credentials'
+        'storage_size': os.environ.get('OPENCLAW_STORAGE_SIZE', '10Gi'),
+        'storage_class': os.environ.get('OPENCLAW_STORAGE_CLASS', 'gp3'),
+        'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'),
+        'aws_credentials_secret': os.environ.get('OPENCLAW_AWS_CREDENTIALS_SECRET', 'aws-credentials')
     }
 
     # ResourceQuota 限制

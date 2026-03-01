@@ -24,6 +24,9 @@ spec:
         version: v1
     spec:
       serviceAccountName: openclaw-provisioner
+      nodeSelector:
+        workload-type: provisioning
+        arch: arm64
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
@@ -55,6 +58,29 @@ spec:
               name: openclaw-provisioning-secret
               key: secret-key
               optional: true
+        # OpenClaw Instance 配置
+        # - name: OPENCLAW_RUNTIME_CLASS
+        #   value: "kata-fc"  # 留空使用 runc
+        # - name: OPENCLAW_NODE_SELECTOR
+        #   value: '{"workload-type":"kata"}'
+        # - name: OPENCLAW_TOLERATIONS
+        #   value: '[{"key":"kata-dedicated","operator":"Exists","effect":"NoSchedule"}]'
+        - name: OPENCLAW_CPU_REQUEST
+          value: "500m"
+        - name: OPENCLAW_MEMORY_REQUEST
+          value: "1Gi"
+        - name: OPENCLAW_CPU_LIMIT
+          value: "2"
+        - name: OPENCLAW_MEMORY_LIMIT
+          value: "4Gi"
+        - name: OPENCLAW_STORAGE_SIZE
+          value: "10Gi"
+        - name: OPENCLAW_STORAGE_CLASS
+          value: "gp3"
+        - name: OPENCLAW_MODEL
+          value: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        - name: OPENCLAW_AWS_CREDENTIALS_SECRET
+          value: "aws-credentials"
         resources:
           requests:
             cpu: 100m
