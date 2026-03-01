@@ -45,17 +45,30 @@ def provision():
     }
     """
     try:
-        # Validate input
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Request body is required"}), 400
+        # Get user info from Headers (API Gateway) or Body (direct call)
+        # Priority: Headers > Body (for API Gateway integration)
+        user_email = request.headers.get('X-User-Email')
+        cognito_sub = request.headers.get('X-Cognito-Sub')
 
-        user_email = data.get('email')
+        # Fallback to request body if headers not present (backward compatibility)
+        data = request.get_json() or {}
+        if not user_email:
+            user_email = data.get('email')
+        if not cognito_sub:
+            cognito_sub = data.get('cognito_sub')
+
+        # Validate email
         if not user_email or not validate_email(user_email):
-            return jsonify({"error": "Valid email is required"}), 400
+            return jsonify({
+                "error": "Valid email is required",
+                "hint": "Provide email in X-User-Email header or request body"
+            }), 400
 
-        cognito_sub = data.get('cognito_sub')
         custom_config = data.get('config', {})
+
+        # Log source of user info (for debugging)
+        source = "headers" if request.headers.get('X-User-Email') else "body"
+        logger.debug(f"User info source: {source}")
 
         # Generate user_id
         user_id = generate_user_id(user_email)

@@ -1,0 +1,43 @@
+---
+# 使用 ALB (internal) 而不是 NLB
+# ALB 支持 HTTP headers (Layer 7)，可以传递 X-User-Email, X-Cognito-Sub
+# scheme: internal 避免暴露到公网，防止 AWS violation
+apiVersion: v1
+kind: Service
+metadata:
+  name: openclaw-provisioning-alb
+  namespace: openclaw-provisioning
+  labels:
+    app: openclaw-provisioning
+  annotations:
+    # ALB 配置
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"  # ⚠️ 关键: internal (不暴露公网)
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+
+    # 健康检查
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "HTTP"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/health"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "30"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "5"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+
+    # 负载均衡器名称
+    service.beta.kubernetes.io/aws-load-balancer-name: "openclaw-provisioning-internal"
+
+    # 跨 AZ 负载均衡
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+    # 安全组 (需要创建后配置)
+    # service.beta.kubernetes.io/aws-load-balancer-security-groups: "sg-xxxxxxxx"
+spec:
+  type: LoadBalancer
+  selector:
+    app: openclaw-provisioning
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+  sessionAffinity: None

@@ -25,8 +25,8 @@ function log_info() {
     echo -e "${YELLOW}→${NC} $1"
 }
 
-# 生成 user_id
-USER_ID=$(echo -n "$TEST_EMAIL" | md5sum | cut -c1-8)
+# 生成 user_id (使用 SHA256，与服务端一致)
+USER_ID=$(echo -n "$TEST_EMAIL" | tr '[:upper:]' '[:lower:]' | shasum -a 256 | cut -c1-8)
 
 echo "========================================"
 echo "OpenClaw Provisioning Service API 测试"
