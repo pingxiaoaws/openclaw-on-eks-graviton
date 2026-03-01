@@ -318,6 +318,31 @@ function create_api_gateway() {
       --region $REGION > /dev/null
     log_info "  ✅ GET /health"
 
+    # Frontend routes (no auth)
+    aws apigatewayv2 create-route \
+      --api-id $API_ID \
+      --route-key 'GET /' \
+      --authorization-type NONE \
+      --target integrations/$INTEGRATION_ID \
+      --region $REGION > /dev/null
+    log_info "  ✅ GET / (Frontend)"
+
+    aws apigatewayv2 create-route \
+      --api-id $API_ID \
+      --route-key 'GET /dashboard' \
+      --authorization-type NONE \
+      --target integrations/$INTEGRATION_ID \
+      --region $REGION > /dev/null
+    log_info "  ✅ GET /dashboard"
+
+    aws apigatewayv2 create-route \
+      --api-id $API_ID \
+      --route-key 'GET /static/{proxy+}' \
+      --authorization-type NONE \
+      --target integrations/$INTEGRATION_ID \
+      --region $REGION > /dev/null
+    log_info "  ✅ GET /static/* (Static files)"
+
     # 5. 创建 Stage
     log_info "创建 Stage..."
     aws apigatewayv2 create-stage \

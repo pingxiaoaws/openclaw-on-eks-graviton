@@ -16,7 +16,7 @@ const CONFIG = {
 
         // When accessing service directly (for development)
         // Will auto-detect based on current location
-        BASE_URL: window.location.origin,
+        BASE_URL: window.location.origin + (window.location.pathname.startsWith('/prod') ? '/prod' : ''),
 
         // Use API Gateway or direct access
         USE_GATEWAY: false // Set to true if accessing via API Gateway

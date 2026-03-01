@@ -50,10 +50,26 @@ def create_app():
         """Alias for index"""
         return render_template('index.html')
 
+    # Frontend routes with /prod prefix (for API Gateway)
+    @app.route('/prod/')
+    def prod_index():
+        """Serve frontend dashboard with prod prefix"""
+        return render_template('index.html')
+
+    @app.route('/prod/dashboard')
+    def prod_dashboard():
+        """Alias for index with prod prefix"""
+        return render_template('index.html')
+
     # Serve static files explicitly (for cases where static_folder doesn't work)
     @app.route('/static/<path:filename>')
     def serve_static(filename):
         """Serve static files"""
+        return send_from_directory(app.static_folder, filename)
+
+    @app.route('/prod/static/<path:filename>')
+    def serve_static_prod(filename):
+        """Serve static files with prod prefix"""
         return send_from_directory(app.static_folder, filename)
 
     # Setup middlewares
