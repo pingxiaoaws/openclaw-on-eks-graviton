@@ -6,6 +6,18 @@ import os
 
 logger = logging.getLogger(__name__)
 
+class StripProdPrefixMiddleware:
+    """WSGI Middleware to strip /prod prefix before Flask routing"""
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        path = environ.get('PATH_INFO', '')
+        if path.startswith('/prod/'):
+            environ['PATH_INFO'] = path[5:]  # Remove '/prod'
+            logger.debug(f"Stripped /prod prefix: {path} -> {environ['PATH_INFO']}")
+        return self.app(environ, start_response)
+
 def create_app():
     """Factory function to create Flask application"""
     # Set template and static folders
@@ -31,15 +43,6 @@ def create_app():
         except Exception as e:
             logger.error(f"❌ Failed to load Kubernetes config: {e}")
             raise
-
-    # Add middleware to strip /prod prefix from API Gateway requests
-    @app.before_request
-    def strip_prod_prefix():
-        """Strip /prod prefix from requests coming through API Gateway"""
-        from flask import request
-        if request.path.startswith('/prod/'):
-            # Rewrite the path without /prod prefix
-            request.environ['PATH_INFO'] = request.path[5:]  # Remove '/prod'
 
     # Register blueprints (API endpoints)
     from app.api import provision_bp, status_bp, delete_bp, health_bp
@@ -68,6 +71,9 @@ def create_app():
     # Setup middlewares
     from app.middleware import setup_middlewares
     setup_middlewares(app)
+
+    # Apply WSGI middleware to strip /prod prefix (must be last)
+    app.wsgi_app = StripProdPrefixMiddleware(app.wsgi_app)
 
     logger.info("🚀 OpenClaw Provisioning Service initialized")
     logger.info(f"📁 Template folder: {template_dir}")
