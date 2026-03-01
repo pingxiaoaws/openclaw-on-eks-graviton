@@ -1,0 +1,31 @@
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: test-s4
+  region: us-west-2
+
+managedNodeGroups:
+  - name: graviton-provisioning
+    instanceType: t4g.medium
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 3
+    volumeSize: 20
+    volumeType: gp3
+    amiFamily: AmazonLinux2023
+
+    labels:
+      workload-type: provisioning
+      arch: arm64
+
+    tags:
+      Name: graviton-provisioning
+      Purpose: openclaw-provisioning-service
+
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        cloudWatch: true
+        ebs: true

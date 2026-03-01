@@ -1,0 +1,35 @@
+// Configuration
+const CONFIG = {
+    // Cognito Configuration
+    COGNITO: {
+        REGION: 'us-west-2',
+        USER_POOL_ID: 'us-west-2_gvOCTiLQE',
+        CLIENT_ID: 'f5qd2udi8508dd132d72qn7uc',
+        // Cognito domain (if using Hosted UI, otherwise we use AWS SDK directly)
+        DOMAIN: null
+    },
+
+    // API Configuration
+    API: {
+        // When running through API Gateway
+        GATEWAY_ENDPOINT: 'https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod',
+
+        // When accessing service directly (for development)
+        // Will auto-detect based on current location
+        BASE_URL: window.location.origin,
+
+        // Use API Gateway or direct access
+        USE_GATEWAY: false // Set to true if accessing via API Gateway
+    },
+
+    // Polling interval for status updates (ms)
+    POLL_INTERVAL: 5000,
+
+    // Auto-refresh interval for instance list (ms)
+    REFRESH_INTERVAL: 30000
+};
+
+// Auto-detect if we're running through API Gateway
+if (window.location.hostname.includes('execute-api')) {
+    CONFIG.API.USE_GATEWAY = true;
+}
