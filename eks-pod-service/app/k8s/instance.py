@@ -37,7 +37,6 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             "namespace": namespace,
             "labels": {
                 "openclaw.rocks/user-id": user_id,
-                "openclaw.rocks/user-email": user_email,
                 "app.kubernetes.io/managed-by": "openclaw-provisioning-service"
             },
             "annotations": {
