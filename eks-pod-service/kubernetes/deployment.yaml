@@ -40,7 +40,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
       - name: provisioning
-        image: YOUR_ECR_REPO/openclaw-provisioning:latest
+        image: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
