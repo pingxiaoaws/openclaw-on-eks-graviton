@@ -32,18 +32,21 @@ def create_app():
             logger.error(f"❌ Failed to load Kubernetes config: {e}")
             raise
 
+    # Add middleware to strip /prod prefix from API Gateway requests
+    @app.before_request
+    def strip_prod_prefix():
+        """Strip /prod prefix from requests coming through API Gateway"""
+        from flask import request
+        if request.path.startswith('/prod/'):
+            # Rewrite the path without /prod prefix
+            request.environ['PATH_INFO'] = request.path[5:]  # Remove '/prod'
+
     # Register blueprints (API endpoints)
     from app.api import provision_bp, status_bp, delete_bp, health_bp
     app.register_blueprint(provision_bp)
     app.register_blueprint(status_bp)
     app.register_blueprint(delete_bp)
     app.register_blueprint(health_bp)
-
-    # Register blueprints again with /prod prefix for API Gateway
-    app.register_blueprint(provision_bp, url_prefix='/prod')
-    app.register_blueprint(status_bp, url_prefix='/prod')
-    app.register_blueprint(delete_bp, url_prefix='/prod')
-    app.register_blueprint(health_bp, url_prefix='/prod')
 
     # Frontend routes
     @app.route('/')
@@ -56,26 +59,10 @@ def create_app():
         """Alias for index"""
         return render_template('index.html')
 
-    # Frontend routes with /prod prefix (for API Gateway)
-    @app.route('/prod/')
-    def prod_index():
-        """Serve frontend dashboard with prod prefix"""
-        return render_template('index.html')
-
-    @app.route('/prod/dashboard')
-    def prod_dashboard():
-        """Alias for index with prod prefix"""
-        return render_template('index.html')
-
     # Serve static files explicitly (for cases where static_folder doesn't work)
     @app.route('/static/<path:filename>')
     def serve_static(filename):
         """Serve static files"""
-        return send_from_directory(app.static_folder, filename)
-
-    @app.route('/prod/static/<path:filename>')
-    def serve_static_prod(filename):
-        """Serve static files with prod prefix"""
         return send_from_directory(app.static_folder, filename)
 
     # Setup middlewares
