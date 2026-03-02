@@ -62,3 +62,11 @@ class Config:
     COGNITO_REGION = os.environ.get('COGNITO_REGION', 'us-west-2')
     COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', 'us-west-2_gvOCTiLQE')
     COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', 'f5qd2udi8508dd132d72qn7uc')
+
+    # Ingress 配置（用于 OpenClaw instance 外部访问）
+    INGRESS_ENABLED = os.environ.get('INGRESS_ENABLED', 'true').lower() == 'true'
+    INGRESS_CLASS = os.environ.get('INGRESS_CLASS', 'alb')
+    INGRESS_HOST = os.environ.get('INGRESS_HOST', 'openclaw.example.com')  # 需要配置真实域名
+    INGRESS_GROUP_NAME = os.environ.get('INGRESS_GROUP_NAME', 'openclaw-instances')
+    INGRESS_SCHEME = os.environ.get('INGRESS_SCHEME', 'internet-facing')
+    INGRESS_CERTIFICATE_ARN = os.environ.get('INGRESS_CERTIFICATE_ARN', '')  # ACM 证书 ARN（可选）

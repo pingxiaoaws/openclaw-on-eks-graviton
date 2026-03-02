@@ -76,7 +76,8 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             "networking": {
                 "service": {
                     "type": "ClusterIP"
-                }
+                },
+                "ingress": _build_ingress_config(user_id) if Config.INGRESS_ENABLED else {"enabled": False}
             },
             "security": {
                 "podSecurityContext": {
@@ -134,6 +135,40 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         )
 
     return k8s_client.create_or_get(create, get, f"OpenClawInstance {instance_name}")
+
+
+def _build_ingress_config(user_id):
+    """
+    Build Ingress configuration for OpenClawInstance
+
+    Args:
+        user_id: User ID for generating unique path
+
+    Returns:
+        Dict: Ingress configuration
+    """
+    config = {
+        "enabled": True,
+        "className": Config.INGRESS_CLASS,
+        "annotations": {
+            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/group.name": Config.INGRESS_GROUP_NAME,
+            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/scheme": Config.INGRESS_SCHEME,
+        },
+        "hosts": [{
+            "host": Config.INGRESS_HOST,
+            "paths": [{
+                "path": f"/instance/{user_id}",
+                "pathType": "Prefix"
+            }]
+        }]
+    }
+
+    # Add ACM certificate ARN if configured
+    if Config.INGRESS_CERTIFICATE_ARN:
+        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/certificate-arn"] = Config.INGRESS_CERTIFICATE_ARN
+        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/listen-ports"] = '[{"HTTPS":443}]'
+
+    return config
 
 
 def _deep_merge(base, override):

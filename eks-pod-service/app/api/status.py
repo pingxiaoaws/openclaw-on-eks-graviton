@@ -89,12 +89,20 @@ def status(user_info, user_id):
         # Get creation timestamp
         created_at = instance.get('metadata', {}).get('creationTimestamp', '')
 
+        # Build external Ingress URL if enabled
+        from app.config import Config
+        ingress_url = None
+        if Config.INGRESS_ENABLED and phase == 'Running':
+            protocol = 'https' if Config.INGRESS_CERTIFICATE_ARN else 'http'
+            ingress_url = f"{protocol}://{Config.INGRESS_HOST}/instance/{user_id}/"
+
         response = {
             "user_id": user_id,
             "namespace": namespace,
             "instance_name": instance_name,
             "status": phase,  # Simple string: "Running", "Pending", etc.
-            "gateway_endpoint": gateway_endpoint,
+            "gateway_endpoint": gateway_endpoint,  # Internal cluster endpoint
+            "ingress_url": ingress_url,  # External Ingress URL
             "created_at": created_at,
             "pods": pod_status,
             "raw_status": instance_status  # Keep full status for debugging

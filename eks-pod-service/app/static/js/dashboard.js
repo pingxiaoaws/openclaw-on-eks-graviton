@@ -135,8 +135,9 @@ const Dashboard = {
 
         // Update connect button
         const connectBtn = document.getElementById('connect-btn');
-        if (status === 'Running' && instance.gateway_endpoint) {
+        if (status === 'Running' && (instance.ingress_url || instance.gateway_endpoint)) {
             connectBtn.disabled = false;
+            connectBtn.innerHTML = '<span>🔗</span> Connect to Gateway';
         } else {
             connectBtn.disabled = true;
             connectBtn.innerHTML = '<span>⏳</span> Starting...';

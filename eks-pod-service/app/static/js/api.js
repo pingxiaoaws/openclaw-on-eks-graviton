@@ -112,19 +112,16 @@ const API = {
             throw new Error('Invalid instance');
         }
 
-        // Get gateway token
-        const userId = instance.user_id;
-
-        // In a real implementation, you would:
-        // 1. Get the gateway token from Kubernetes secret
-        // 2. Open a proxy connection or set up port-forward
-        // 3. Open the gateway UI in a new tab
-
-        // For now, we'll show the gateway endpoint
-        alert(`Instance Gateway Endpoint:\n\n${instance.gateway_endpoint}\n\nNote: You need to set up port-forwarding or ingress to access this endpoint from your browser.`);
-
-        // Example kubectl command
-        const portForwardCmd = `kubectl port-forward -n openclaw svc/openclaw-${userId} 18789:18789`;
+        // Use Ingress URL if available, otherwise show port-forward instructions
+        if (instance.ingress_url) {
+            // Open Ingress URL in new tab
+            window.open(instance.ingress_url, '_blank');
+        } else {
+            // Fallback: show port-forward instructions
+            const userId = instance.user_id;
+            const portForwardCmd = `kubectl port-forward -n openclaw-${userId} svc/openclaw-${userId} 18789:18789`;
+            alert(`Instance Gateway Endpoint:\n\n${instance.gateway_endpoint}\n\nNote: Ingress not configured. Use port-forwarding:\n\n${portForwardCmd}\n\nThen open: http://localhost:18789/`);
+        }
         console.log('Port-forward command:', portForwardCmd);
 
         return {
