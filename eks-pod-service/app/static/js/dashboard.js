@@ -124,13 +124,12 @@ const Dashboard = {
         statusEl.className = `status-badge status-${status.toLowerCase()}`;
 
         // Update gateway endpoint
+        const gatewayEl = document.getElementById('instance-gateway');
         if (instance.gateway_endpoint) {
-            const gatewayCode = document.querySelector('#instance-gateway code');
-            gatewayCode.textContent = instance.gateway_endpoint;
+            gatewayEl.textContent = instance.gateway_endpoint;
             document.getElementById('copy-gateway-btn').disabled = false;
         } else {
-            const gatewayCode = document.querySelector('#instance-gateway code');
-            gatewayCode.textContent = 'Not available yet';
+            gatewayEl.textContent = 'Not available yet';
             document.getElementById('copy-gateway-btn').disabled = true;
         }
 
