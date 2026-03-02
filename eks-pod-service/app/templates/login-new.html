@@ -396,16 +396,26 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/config.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
     <script>
-        // Check if already logged in
-        if (Auth.init()) {
-            window.location.href = '/dashboard';
-        }
+        // Dynamically load config and auth scripts with correct path prefix
+        (function() {
+            const basePath = window.location.pathname.startsWith('/prod') ? '/prod' : '';
 
-        // Handle login form submission
-        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            // Load config.js
+            const configScript = document.createElement('script');
+            configScript.src = basePath + '/static/js/config.js';
+            configScript.onload = function() {
+                // Load auth.js after config.js
+                const authScript = document.createElement('script');
+                authScript.src = basePath + '/static/js/auth.js';
+                authScript.onload = function() {
+                    // Check if already logged in
+                    if (Auth.init()) {
+                        window.location.href = CONFIG.API.BASE_URL + '/dashboard';
+                    }
+
+                    // Handle login form submission
+                    document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const email = document.getElementById('email').value;
@@ -422,13 +432,18 @@
                 await Auth.signIn(email, password);
                 // Use BASE_URL to handle both API Gateway (/prod/dashboard) and direct access (/dashboard)
                 window.location.href = CONFIG.API.BASE_URL + '/dashboard';
-            } catch (error) {
-                errorEl.textContent = error.message || 'Authentication failed. Please check your credentials.';
-                errorEl.classList.add('show');
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Sign In';
-            }
-        });
+                        } catch (error) {
+                            errorEl.textContent = error.message || 'Authentication failed. Please check your credentials.';
+                            errorEl.classList.add('show');
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = 'Sign In';
+                        }
+                    });
+                };
+                document.head.appendChild(authScript);
+            };
+            document.head.appendChild(configScript);
+        })();
     </script>
 </body>
 </html>
