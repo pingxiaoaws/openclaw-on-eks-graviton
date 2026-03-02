@@ -61,12 +61,12 @@ def create_app():
     @app.route('/login')
     def login():
         """Serve login page"""
-        return render_template('login.html')
+        return render_template('login-new.html')
 
     @app.route('/dashboard')
     def dashboard():
         """Serve dashboard page"""
-        return render_template('dashboard.html')
+        return render_template('dashboard-new.html')
 
     # Serve static files explicitly (for cases where static_folder doesn't work)
     @app.route('/static/<path:filename>')
