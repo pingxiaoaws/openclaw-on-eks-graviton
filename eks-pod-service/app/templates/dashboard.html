@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>🦞 OpenClaw Dashboard</h1>
+        </div>
+        <div class="header-right">
+            <span id="user-email" class="user-info"></span>
+            <button id="logout-btn" class="btn btn-secondary">Logout</button>
+        </div>
+    </header>
+
+    <main>
+        <div class="actions-bar">
+            <button id="create-instance-btn" class="btn btn-primary">
+                <span>➕</span> Create OpenClaw Instance
+            </button>
+            <button id="refresh-btn" class="btn btn-secondary">
+                <span>🔄</span> Refresh
+            </button>
+        </div>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Loading your instance...</p>
+        </div>
+
+        <div id="error-message" class="error-banner hidden"></div>
+
+        <div id="instances-container">
+            <!-- Empty State -->
+            <div id="empty-state" class="empty-state hidden">
+                <div class="empty-icon">📦</div>
+                <h2>No OpenClaw Instance Yet</h2>
+                <p>Get started by creating your first OpenClaw instance</p>
+                <button class="btn btn-primary btn-lg" onclick="document.getElementById('create-instance-btn').click()">
+                    <span>➕</span> Create Instance
+                </button>
+            </div>
+
+            <!-- Instance Display -->
+            <div id="instance-display" class="hidden">
+                <div class="instance-card-large">
+                    <div class="instance-header">
+                        <div>
+                            <h2 id="instance-name">My OpenClaw Instance</h2>
+                            <span id="instance-status" class="status-badge">Loading...</span>
+                        </div>
+                    </div>
+
+                    <div class="instance-details">
+                        <div class="detail-group">
+                            <label>Instance ID</label>
+                            <div class="detail-value" id="instance-id">-</div>
+                        </div>
+
+                        <div class="detail-group">
+                            <label>Namespace</label>
+                            <div class="detail-value" id="instance-namespace">-</div>
+                        </div>
+
+                        <div class="detail-group">
+                            <label>Created At</label>
+                            <div class="detail-value" id="instance-created">-</div>
+                        </div>
+
+                        <div class="detail-group full-width">
+                            <label>Gateway Endpoint</label>
+                            <div class="gateway-endpoint" id="instance-gateway">
+                                <code>-</code>
+                                <button class="btn-copy" id="copy-gateway-btn" title="Copy to clipboard">📋</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="instance-actions">
+                        <button id="connect-btn" class="btn btn-success" disabled>
+                            <span>🔗</span> Connect to Gateway
+                        </button>
+                        <button id="delete-btn" class="btn btn-danger">
+                            <span>🗑️</span> Delete Instance
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/config.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

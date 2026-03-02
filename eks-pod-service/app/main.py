@@ -54,13 +54,19 @@ def create_app():
     # Frontend routes
     @app.route('/')
     def index():
-        """Serve frontend dashboard"""
-        return render_template('index.html')
+        """Redirect to login page"""
+        from flask import redirect
+        return redirect('/login')
+
+    @app.route('/login')
+    def login():
+        """Serve login page"""
+        return render_template('login.html')
 
     @app.route('/dashboard')
     def dashboard():
-        """Alias for index"""
-        return render_template('index.html')
+        """Serve dashboard page"""
+        return render_template('dashboard.html')
 
     # Serve static files explicitly (for cases where static_folder doesn't work)
     @app.route('/static/<path:filename>')
