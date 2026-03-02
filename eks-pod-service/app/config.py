@@ -62,6 +62,8 @@ class Config:
     COGNITO_REGION = os.environ.get('COGNITO_REGION', 'us-west-2')
     COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', 'us-west-2_gvOCTiLQE')
     COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', 'f5qd2udi8508dd132d72qn7uc')
+    COGNITO_USER_POOL_DOMAIN = os.environ.get('COGNITO_USER_POOL_DOMAIN', '')  # e.g., your-domain.auth.us-west-2.amazoncognito.com
+    AWS_ACCOUNT_ID = os.environ.get('AWS_ACCOUNT_ID', '')  # AWS Account ID for Cognito ARN
 
     # Ingress 配置（用于 OpenClaw instance 外部访问）
     INGRESS_ENABLED = os.environ.get('INGRESS_ENABLED', 'true').lower() == 'true'

@@ -139,7 +139,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
 
 def _build_ingress_config(user_id):
     """
-    Build Ingress configuration for OpenClawInstance
+    Build Ingress configuration for OpenClawInstance with Cognito authentication
 
     Args:
         user_id: User ID for generating unique path
@@ -147,6 +147,8 @@ def _build_ingress_config(user_id):
     Returns:
         Dict: Ingress configuration
     """
+    import json
+
     config = {
         "enabled": True,
         "className": Config.INGRESS_CLASS,
@@ -163,10 +165,27 @@ def _build_ingress_config(user_id):
         }]
     }
 
-    # Add ACM certificate ARN if configured
-    if Config.INGRESS_CERTIFICATE_ARN:
+    # Add HTTPS and Cognito authentication if certificate and Cognito domain are configured
+    if Config.INGRESS_CERTIFICATE_ARN and Config.COGNITO_USER_POOL_DOMAIN and Config.AWS_ACCOUNT_ID:
+        # HTTPS configuration
         config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/certificate-arn"] = Config.INGRESS_CERTIFICATE_ARN
         config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/listen-ports"] = '[{"HTTPS":443}]'
+
+        # Cognito authentication configuration
+        cognito_config = {
+            "userPoolARN": f"arn:aws:cognito-idp:{Config.COGNITO_REGION}:{Config.AWS_ACCOUNT_ID}:userpool/{Config.COGNITO_USER_POOL_ID}",
+            "userPoolClientID": Config.COGNITO_CLIENT_ID,
+            "userPoolDomain": Config.COGNITO_USER_POOL_DOMAIN
+        }
+
+        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/auth-type"] = "cognito"
+        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/auth-idp-cognito"] = json.dumps(cognito_config)
+        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/auth-on-unauthenticated-request"] = "authenticate"
+        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/auth-scope"] = "openid"
+
+        logger.info(f"✅ Cognito authentication enabled for user {user_id}")
+    else:
+        logger.warning(f"⚠️ Cognito authentication NOT enabled - missing configuration. Ingress will only use OpenClaw gateway_token for auth.")
 
     return config
 
