@@ -112,15 +112,15 @@ const API = {
             throw new Error('Invalid instance');
         }
 
-        // Use Ingress URL if available, otherwise show port-forward instructions
-        if (instance.ingress_url) {
-            // Open Ingress URL in new tab
-            window.open(instance.ingress_url, '_blank');
+        // Use API Gateway URL if available, otherwise show port-forward instructions
+        if (instance.api_gateway_url) {
+            // Open API Gateway URL in new tab (already authenticated via JWT)
+            window.open(instance.api_gateway_url, '_blank');
         } else {
             // Fallback: show port-forward instructions
             const userId = instance.user_id;
             const portForwardCmd = `kubectl port-forward -n openclaw-${userId} svc/openclaw-${userId} 18789:18789`;
-            alert(`Instance Gateway Endpoint:\n\n${instance.gateway_endpoint}\n\nNote: Ingress not configured. Use port-forwarding:\n\n${portForwardCmd}\n\nThen open: http://localhost:18789/`);
+            alert(`Instance Gateway Endpoint:\n\n${instance.gateway_endpoint}\n\nNote: API Gateway route not configured. Use port-forwarding:\n\n${portForwardCmd}\n\nThen open: http://localhost:18789/`);
         }
         console.log('Port-forward command:', portForwardCmd);
 

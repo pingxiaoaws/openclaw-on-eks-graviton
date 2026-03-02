@@ -139,7 +139,10 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
 
 def _build_ingress_config(user_id):
     """
-    Build Ingress configuration for OpenClawInstance with Cognito authentication
+    Build Ingress configuration for Internal ALB accessed via API Gateway
+
+    Architecture:
+      User → API Gateway (JWT auth) → VPC Link → Internal ALB → OpenClaw
 
     Args:
         user_id: User ID for generating unique path
@@ -147,17 +150,27 @@ def _build_ingress_config(user_id):
     Returns:
         Dict: Ingress configuration
     """
-    import json
-
     config = {
         "enabled": True,
         "className": Config.INGRESS_CLASS,
         "annotations": {
+            # ALB Ingress Group - share single internal ALB across all instances
             f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/group.name": Config.INGRESS_GROUP_NAME,
+
+            # Internal ALB - not exposed to internet
             f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/scheme": Config.INGRESS_SCHEME,
+
+            # IP target mode for better performance
+            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/target-type": Config.INGRESS_TARGET_TYPE,
+
+            # Health check
+            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-path": f"/instance/{user_id}/",
+            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
+            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/success-codes": "200,404",  # 404 ok if gateway requires auth
         },
+        # Path-based routing only (no host - accessed via API Gateway)
         "hosts": [{
-            "host": Config.INGRESS_HOST,
+            "host": "",  # Empty host for path-based routing
             "paths": [{
                 "path": f"/instance/{user_id}",
                 "pathType": "Prefix"
@@ -165,27 +178,8 @@ def _build_ingress_config(user_id):
         }]
     }
 
-    # Add HTTPS and Cognito authentication if certificate and Cognito domain are configured
-    if Config.INGRESS_CERTIFICATE_ARN and Config.COGNITO_USER_POOL_DOMAIN and Config.AWS_ACCOUNT_ID:
-        # HTTPS configuration
-        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/certificate-arn"] = Config.INGRESS_CERTIFICATE_ARN
-        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/listen-ports"] = '[{"HTTPS":443}]'
-
-        # Cognito authentication configuration
-        cognito_config = {
-            "userPoolARN": f"arn:aws:cognito-idp:{Config.COGNITO_REGION}:{Config.AWS_ACCOUNT_ID}:userpool/{Config.COGNITO_USER_POOL_ID}",
-            "userPoolClientID": Config.COGNITO_CLIENT_ID,
-            "userPoolDomain": Config.COGNITO_USER_POOL_DOMAIN
-        }
-
-        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/auth-type"] = "cognito"
-        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/auth-idp-cognito"] = json.dumps(cognito_config)
-        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/auth-on-unauthenticated-request"] = "authenticate"
-        config["annotations"][f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/auth-scope"] = "openid"
-
-        logger.info(f"✅ Cognito authentication enabled for user {user_id}")
-    else:
-        logger.warning(f"⚠️ Cognito authentication NOT enabled - missing configuration. Ingress will only use OpenClaw gateway_token for auth.")
+    logger.info(f"✅ Internal ALB Ingress configured for user {user_id} - path: /instance/{user_id}")
+    logger.info(f"   Access via API Gateway: {Config.API_GATEWAY_ENDPOINT}/{Config.API_GATEWAY_STAGE}/instance/{user_id}/")
 
     return config
 

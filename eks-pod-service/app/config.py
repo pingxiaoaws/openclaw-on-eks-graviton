@@ -65,10 +65,13 @@ class Config:
     COGNITO_USER_POOL_DOMAIN = os.environ.get('COGNITO_USER_POOL_DOMAIN', '')  # e.g., your-domain.auth.us-west-2.amazoncognito.com
     AWS_ACCOUNT_ID = os.environ.get('AWS_ACCOUNT_ID', '')  # AWS Account ID for Cognito ARN
 
-    # Ingress 配置（用于 OpenClaw instance 外部访问）
+    # Ingress 配置（Internal ALB + API Gateway）
     INGRESS_ENABLED = os.environ.get('INGRESS_ENABLED', 'true').lower() == 'true'
     INGRESS_CLASS = os.environ.get('INGRESS_CLASS', 'alb')
-    INGRESS_HOST = os.environ.get('INGRESS_HOST', 'openclaw.example.com')  # 需要配置真实域名
     INGRESS_GROUP_NAME = os.environ.get('INGRESS_GROUP_NAME', 'openclaw-instances')
-    INGRESS_SCHEME = os.environ.get('INGRESS_SCHEME', 'internet-facing')
-    INGRESS_CERTIFICATE_ARN = os.environ.get('INGRESS_CERTIFICATE_ARN', '')  # ACM 证书 ARN（可选）
+    INGRESS_SCHEME = os.environ.get('INGRESS_SCHEME', 'internal')  # Internal ALB（不暴露公网）
+    INGRESS_TARGET_TYPE = os.environ.get('INGRESS_TARGET_TYPE', 'ip')  # IP mode for better performance
+
+    # API Gateway 配置（用于构建外部访问 URL）
+    API_GATEWAY_ENDPOINT = os.environ.get('API_GATEWAY_ENDPOINT', 'https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com')
+    API_GATEWAY_STAGE = os.environ.get('API_GATEWAY_STAGE', 'prod')
