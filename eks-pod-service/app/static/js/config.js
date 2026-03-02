@@ -4,7 +4,7 @@ const CONFIG = {
     COGNITO: {
         REGION: 'us-west-2',
         USER_POOL_ID: 'us-west-2_gvOCTiLQE',
-        CLIENT_ID: 'f5qd2udi8508dd132d72qn7uc',
+        CLIENT_ID: '62csdgbfh62kqtekbhjpqhmlta',  // New client without secret (for frontend)
         // Cognito domain (if using Hosted UI, otherwise we use AWS SDK directly)
         DOMAIN: null
     },
