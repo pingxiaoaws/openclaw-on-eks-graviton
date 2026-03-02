@@ -584,7 +584,16 @@
             const scripts = ['config.js', 'auth.js', 'api.js', 'dashboard.js'];
 
             function loadScript(index) {
-                if (index >= scripts.length) return;
+                if (index >= scripts.length) {
+                    // All scripts loaded, initialize dashboard
+                    console.log('All scripts loaded, initializing dashboard...');
+                    if (typeof Dashboard !== 'undefined') {
+                        Dashboard.init();
+                    } else {
+                        console.error('Dashboard object not found after loading scripts');
+                    }
+                    return;
+                }
 
                 const script = document.createElement('script');
                 script.src = basePath + '/static/js/' + scripts[index];
