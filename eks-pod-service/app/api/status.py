@@ -81,12 +81,23 @@ def status(user_info, user_id):
         except:
             pod_status = []
 
+        # Extract status from OpenClawInstance
+        instance_status = instance.get('status', {})
+        phase = instance_status.get('phase', 'Pending')
+        gateway_endpoint = instance_status.get('gatewayEndpoint', '')
+
+        # Get creation timestamp
+        created_at = instance.get('metadata', {}).get('creationTimestamp', '')
+
         response = {
             "user_id": user_id,
             "namespace": namespace,
             "instance_name": instance_name,
-            "status": instance.get('status', {}),
-            "pods": pod_status
+            "status": phase,  # Simple string: "Running", "Pending", etc.
+            "gateway_endpoint": gateway_endpoint,
+            "created_at": created_at,
+            "pods": pod_status,
+            "raw_status": instance_status  # Keep full status for debugging
         }
 
         return jsonify(response), 200
