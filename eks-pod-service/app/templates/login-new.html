@@ -420,7 +420,8 @@
 
             try {
                 await Auth.signIn(email, password);
-                window.location.href = '/dashboard';
+                // Use BASE_URL to handle both API Gateway (/prod/dashboard) and direct access (/dashboard)
+                window.location.href = CONFIG.API.BASE_URL + '/dashboard';
             } catch (error) {
                 errorEl.textContent = error.message || 'Authentication failed. Please check your credentials.';
                 errorEl.classList.add('show');
