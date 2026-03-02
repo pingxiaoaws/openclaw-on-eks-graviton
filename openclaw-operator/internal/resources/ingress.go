@@ -32,6 +32,7 @@ type IngressProvider string
 const (
 	IngressProviderNginx   IngressProvider = "nginx"
 	IngressProviderTraefik IngressProvider = "traefik"
+	IngressProviderALB     IngressProvider = "alb"
 	IngressProviderUnknown IngressProvider = "unknown"
 )
 
@@ -59,7 +60,8 @@ func BuildIngress(instance *openclawv1alpha1.OpenClawInstance) *networkingv1.Ing
 
 // DetectIngressProvider determines the ingress controller type from the className.
 // Returns IngressProviderNginx if className contains "nginx" (case-insensitive),
-// IngressProviderTraefik if it contains "traefik", or IngressProviderUnknown otherwise.
+// IngressProviderTraefik if it contains "traefik", IngressProviderALB if it contains "alb",
+// or IngressProviderUnknown otherwise.
 func DetectIngressProvider(className *string) IngressProvider {
 	if className == nil {
 		return IngressProviderUnknown
@@ -70,6 +72,9 @@ func DetectIngressProvider(className *string) IngressProvider {
 	}
 	if strings.Contains(lower, "traefik") {
 		return IngressProviderTraefik
+	}
+	if strings.Contains(lower, "alb") {
+		return IngressProviderALB
 	}
 	return IngressProviderUnknown
 }
