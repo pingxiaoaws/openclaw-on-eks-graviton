@@ -57,3 +57,8 @@ class Config:
 
     # 日志
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+
+    # Cognito JWT 验证配置
+    COGNITO_REGION = os.environ.get('COGNITO_REGION', 'us-west-2')
+    COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', 'us-west-2_gvOCTiLQE')
+    COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', 'f5qd2udi8508dd132d72qn7uc')

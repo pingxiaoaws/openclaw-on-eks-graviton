@@ -1,6 +1,8 @@
 """Status API endpoint"""
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, current_app
 from app.k8s.client import K8sClient
+from app.utils.jwt_auth import require_auth
+from app.utils.user_id import generate_user_id
 from kubernetes.client.rest import ApiException
 import logging
 
@@ -8,9 +10,13 @@ status_bp = Blueprint('status', __name__)
 logger = logging.getLogger(__name__)
 
 @status_bp.route('/status/<user_id>', methods=['GET'])
-def status(user_id):
+@require_auth(lambda: current_app.jwt_verifier)
+def status(user_info, user_id):
     """
     Get OpenClaw instance status
+
+    Authentication: Requires valid JWT token in Authorization header
+    Authorization: Users can only access their own instances
 
     Args:
         user_id: User ID
@@ -26,12 +32,25 @@ def status(user_id):
         }
     }
 
+    Response (403 Forbidden):
+    {
+        "error": "Forbidden: You can only access your own instances"
+    }
+
     Response (404 Not Found):
     {
         "error": "Instance not found"
     }
     """
     try:
+        # Verify user can only access their own instance
+        authenticated_user_id = generate_user_id(user_info['user_email'])
+        if user_id != authenticated_user_id:
+            logger.warning(f"⚠️ Unauthorized access attempt: {user_info['user_email']} tried to access user_id {user_id}")
+            return jsonify({
+                "error": "Forbidden: You can only access your own instances"
+            }), 403
+
         namespace = f"openclaw-{user_id}"
         instance_name = f"openclaw-{user_id}"
 

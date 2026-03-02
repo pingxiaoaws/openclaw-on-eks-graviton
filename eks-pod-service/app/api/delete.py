@@ -1,6 +1,8 @@
 """Delete API endpoint"""
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, current_app
 from app.k8s.client import K8sClient
+from app.utils.jwt_auth import require_auth
+from app.utils.user_id import generate_user_id
 from kubernetes.client.rest import ApiException
 import logging
 
@@ -8,9 +10,13 @@ delete_bp = Blueprint('delete', __name__)
 logger = logging.getLogger(__name__)
 
 @delete_bp.route('/delete/<user_id>', methods=['DELETE'])
-def delete(user_id):
+@require_auth(lambda: current_app.jwt_verifier)
+def delete(user_info, user_id):
     """
     Delete an OpenClaw instance and its namespace
+
+    Authentication: Requires valid JWT token in Authorization header
+    Authorization: Users can only delete their own instances
 
     Args:
         user_id: User ID
@@ -22,15 +28,28 @@ def delete(user_id):
         "message": "Instance deleted successfully"
     }
 
+    Response (403 Forbidden):
+    {
+        "error": "Forbidden: You can only delete your own instances"
+    }
+
     Response (404 Not Found):
     {
         "error": "Instance not found"
     }
     """
     try:
+        # Verify user can only delete their own instance
+        authenticated_user_id = generate_user_id(user_info['user_email'])
+        if user_id != authenticated_user_id:
+            logger.warning(f"⚠️ Unauthorized delete attempt: {user_info['user_email']} tried to delete user_id {user_id}")
+            return jsonify({
+                "error": "Forbidden: You can only delete your own instances"
+            }), 403
+
         namespace = f"openclaw-{user_id}"
 
-        logger.info(f"🗑️  Delete request for user: {user_id}")
+        logger.info(f"🗑️  Delete request for user: {user_id} ({user_info['user_email']})")
 
         k8s_client = K8sClient()
 

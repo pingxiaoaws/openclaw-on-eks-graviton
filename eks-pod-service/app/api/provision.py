@@ -1,5 +1,5 @@
 """Provision API endpoint"""
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app.k8s.client import K8sClient
 from app.k8s.namespace import create_namespace
 from app.k8s.quota import create_resource_quota
@@ -7,20 +7,22 @@ from app.k8s.netpol import create_network_policy
 from app.k8s.instance import create_openclaw_instance
 from app.utils.user_id import generate_user_id
 from app.utils.validator import validate_email
+from app.utils.jwt_auth import require_auth
 import logging
 
 provision_bp = Blueprint('provision', __name__)
 logger = logging.getLogger(__name__)
 
 @provision_bp.route('/provision', methods=['POST'])
-def provision():
+@require_auth(lambda: current_app.jwt_verifier)
+def provision(user_info):
     """
     Create an OpenClaw instance
 
-    Request Body:
+    Authentication: Requires valid JWT token in Authorization header
+
+    Request Body (optional):
     {
-        "email": "user@example.com",
-        "cognito_sub": "xxx-xxx-xxx",  # optional
         "config": {  # optional, overrides defaults
             "resources": {
                 "requests": {"cpu": "1", "memory": "2Gi"}
@@ -45,30 +47,20 @@ def provision():
     }
     """
     try:
-        # Get user info from Headers (API Gateway) or Body (direct call)
-        # Priority: Headers > Body (for API Gateway integration)
-        user_email = request.headers.get('X-User-Email')
-        cognito_sub = request.headers.get('X-Cognito-Sub')
+        # Get user info from verified JWT token (secure)
+        user_email = user_info['user_email']
+        cognito_sub = user_info['cognito_sub']
 
-        # Fallback to request body if headers not present (backward compatibility)
-        data = request.get_json() or {}
-        if not user_email:
-            user_email = data.get('email')
-        if not cognito_sub:
-            cognito_sub = data.get('cognito_sub')
-
-        # Validate email
+        # Validate email (should always be valid from JWT, but double-check)
         if not user_email or not validate_email(user_email):
             return jsonify({
-                "error": "Valid email is required",
-                "hint": "Provide email in X-User-Email header or request body"
+                "error": "Invalid email in JWT token",
+                "hint": "Contact administrator"
             }), 400
 
+        # Get custom config from request body (optional)
+        data = request.get_json() or {}
         custom_config = data.get('config', {})
-
-        # Log source of user info (for debugging)
-        source = "headers" if request.headers.get('X-User-Email') else "body"
-        logger.debug(f"User info source: {source}")
 
         # Generate user_id
         user_id = generate_user_id(user_email)

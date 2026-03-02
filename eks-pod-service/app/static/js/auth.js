@@ -103,10 +103,9 @@ const Auth = {
         if (!this.session || !this.session.idToken) {
             return {};
         }
+        // Only send the JWT token - backend will verify and extract user info
         return {
-            'Authorization': `Bearer ${this.session.idToken}`,
-            'X-User-Email': this.session.email,
-            'X-Cognito-Sub': this.session.cognitoSub
+            'Authorization': `Bearer ${this.session.idToken}`
         };
     },
 
