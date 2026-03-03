@@ -56,11 +56,12 @@ def create_app():
             raise
 
     # Register blueprints (API endpoints)
-    from app.api import provision_bp, status_bp, delete_bp, health_bp
+    from app.api import provision_bp, status_bp, delete_bp, health_bp, proxy_bp
     app.register_blueprint(provision_bp)
     app.register_blueprint(status_bp)
     app.register_blueprint(delete_bp)
     app.register_blueprint(health_bp)
+    app.register_blueprint(proxy_bp)  # Reverse proxy for instance access
 
     # Frontend routes
     @app.route('/')
