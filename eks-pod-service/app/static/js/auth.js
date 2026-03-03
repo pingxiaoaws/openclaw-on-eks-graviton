@@ -1,10 +1,20 @@
-// Authentication module
+// Authentication module using amazon-cognito-identity-js
 const Auth = {
     // Current user session
     session: null,
+    userPool: null,
 
     // Initialize authentication
     init() {
+        // Initialize Cognito User Pool
+        if (!this.userPool) {
+            const poolData = {
+                UserPoolId: CONFIG.COGNITO.USER_POOL_ID,
+                ClientId: CONFIG.COGNITO.CLIENT_ID
+            };
+            this.userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+        }
+
         // Check if user has a saved session
         const savedSession = localStorage.getItem('openclaw_session');
         if (savedSession) {
@@ -24,63 +34,60 @@ const Auth = {
         return false;
     },
 
-    // Sign in with Cognito
+    // Sign in with Cognito using SDK
     async signIn(email, password) {
-        try {
-            // Use AWS Cognito Identity Provider API
-            const endpoint = `https://cognito-idp.${CONFIG.COGNITO.REGION}.amazonaws.com/`;
+        return new Promise((resolve, reject) => {
+            try {
+                const authenticationData = {
+                    Username: email,
+                    Password: password,
+                };
 
-            const params = {
-                AuthFlow: 'USER_PASSWORD_AUTH',
-                ClientId: CONFIG.COGNITO.CLIENT_ID,
-                AuthParameters: {
-                    USERNAME: email,
-                    PASSWORD: password
-                }
-            };
+                const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(authenticationData);
 
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-amz-json-1.1',
-                    'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth'
-                },
-                body: JSON.stringify(params)
-            });
+                const userData = {
+                    Username: email,
+                    Pool: this.userPool
+                };
 
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Authentication failed');
+                const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+                cognitoUser.authenticateUser(authenticationDetails, {
+                    onSuccess: (result) => {
+                        console.log('✅ Authentication successful');
+
+                        const idToken = result.getIdToken().getJwtToken();
+                        const accessToken = result.getAccessToken().getJwtToken();
+                        const refreshToken = result.getRefreshToken().getToken();
+
+                        // Parse ID token to get user info
+                        const idTokenPayload = this.parseJWT(idToken);
+
+                        // Save session
+                        this.session = {
+                            email: idTokenPayload.email || email,
+                            cognitoSub: idTokenPayload.sub,
+                            idToken: idToken,
+                            accessToken: accessToken,
+                            refreshToken: refreshToken,
+                            expiresAt: Date.now() + (result.getIdToken().getExpiration() * 1000)
+                        };
+
+                        // Save to localStorage
+                        localStorage.setItem('openclaw_session', JSON.stringify(this.session));
+
+                        resolve(this.session);
+                    },
+                    onFailure: (err) => {
+                        console.error('❌ Authentication failed:', err);
+                        reject(new Error(err.message || 'Authentication failed'));
+                    }
+                });
+            } catch (error) {
+                console.error('Sign in error:', error);
+                reject(error);
             }
-
-            const data = await response.json();
-
-            if (!data.AuthenticationResult) {
-                throw new Error('No authentication result received');
-            }
-
-            // Save session
-            this.session = {
-                email: email,
-                idToken: data.AuthenticationResult.IdToken,
-                accessToken: data.AuthenticationResult.AccessToken,
-                refreshToken: data.AuthenticationResult.RefreshToken,
-                expiresAt: Date.now() + (data.AuthenticationResult.ExpiresIn * 1000)
-            };
-
-            // Parse ID token to get user info
-            const idTokenPayload = this.parseJWT(this.session.idToken);
-            this.session.cognitoSub = idTokenPayload.sub;
-            this.session.email = idTokenPayload.email || email;
-
-            // Save to localStorage
-            localStorage.setItem('openclaw_session', JSON.stringify(this.session));
-
-            return this.session;
-        } catch (error) {
-            console.error('Sign in error:', error);
-            throw error;
-        }
+        });
     },
 
     // Sign out
