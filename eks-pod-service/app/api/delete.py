@@ -1,8 +1,14 @@
 """Delete API endpoint"""
 from flask import Blueprint, jsonify, current_app
 from app.k8s.client import K8sClient
+from app.aws.iam import (
+    delete_pod_identity_role,
+    delete_pod_identity_association,
+    list_pod_identity_associations
+)
 from app.utils.jwt_auth import require_auth
 from app.utils.user_id import generate_user_id
+from app.config import Config
 from kubernetes.client.rest import ApiException
 import logging
 
@@ -53,6 +59,38 @@ def delete(user_info, user_id):
 
         k8s_client = K8sClient()
 
+        # Delete Pod Identity Association and IAM Role (if enabled)
+        pod_identity_deleted = False
+        iam_role_deleted = False
+
+        if Config.USE_POD_IDENTITY:
+            service_account = f"openclaw-{user_id}"
+
+            # Delete Pod Identity Associations
+            logger.info(f"🔗 Deleting Pod Identity Associations for {namespace}/{service_account}")
+            association_ids = list_pod_identity_associations(
+                cluster_name=Config.EKS_CLUSTER_NAME,
+                namespace=namespace,
+                service_account=service_account,
+                region=Config.AWS_REGION
+            )
+
+            for association_id in association_ids:
+                success = delete_pod_identity_association(
+                    cluster_name=Config.EKS_CLUSTER_NAME,
+                    association_id=association_id,
+                    region=Config.AWS_REGION
+                )
+                if success:
+                    logger.info(f"✅ Deleted Pod Identity Association: {association_id}")
+                    pod_identity_deleted = True
+
+            # Delete IAM Role
+            logger.info(f"🔐 Deleting IAM Role for user_id: {user_id}")
+            iam_role_deleted = delete_pod_identity_role(user_id, region=Config.AWS_REGION)
+            if iam_role_deleted:
+                logger.info(f"✅ Deleted IAM Role: openclaw-user-{user_id}")
+
         # Delete namespace (will cascade delete all resources)
         k8s_client.core_v1.delete_namespace(
             name=namespace,
@@ -61,12 +99,21 @@ def delete(user_info, user_id):
 
         logger.info(f"✅ Deleted namespace: {namespace}")
 
-        return jsonify({
+        response = {
             "status": "deleted",
             "user_id": user_id,
             "namespace": namespace,
             "message": "Instance deleted successfully"
-        }), 200
+        }
+
+        if Config.USE_POD_IDENTITY:
+            response["resources_deleted"] = {
+                "namespace": True,
+                "pod_identity_association": pod_identity_deleted,
+                "iam_role": iam_role_deleted
+            }
+
+        return jsonify(response), 200
 
     except ApiException as e:
         if e.status == 404:

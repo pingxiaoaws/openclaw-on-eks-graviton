@@ -5,9 +5,11 @@ from app.k8s.namespace import create_namespace
 from app.k8s.quota import create_resource_quota
 from app.k8s.netpol import create_network_policy
 from app.k8s.instance import create_openclaw_instance
+from app.aws.iam import create_pod_identity_role, create_pod_identity_association
 from app.utils.user_id import generate_user_id
 from app.utils.validator import validate_email
 from app.utils.jwt_auth import require_auth
+from app.config import Config
 import logging
 
 provision_bp = Blueprint('provision', __name__)
@@ -81,6 +83,34 @@ def provision(user_info):
         # Create NetworkPolicy
         netpol, netpol_created = create_network_policy(k8s_client, namespace)
 
+        # Create IAM Role and Pod Identity Association (if enabled)
+        role_arn = None
+        pod_identity_association_id = None
+        if Config.USE_POD_IDENTITY:
+            logger.info(f"🔐 Creating IAM Role for Pod Identity: user_id={user_id}")
+            role_arn = create_pod_identity_role(user_id, region=Config.AWS_REGION)
+
+            if role_arn:
+                logger.info(f"✅ IAM Role created: {role_arn}")
+
+                # Create Pod Identity Association
+                service_account = f"openclaw-{user_id}"
+                logger.info(f"🔗 Creating Pod Identity Association: {namespace}/{service_account}")
+                pod_identity_association_id = create_pod_identity_association(
+                    cluster_name=Config.EKS_CLUSTER_NAME,
+                    namespace=namespace,
+                    service_account=service_account,
+                    role_arn=role_arn,
+                    region=Config.AWS_REGION
+                )
+
+                if pod_identity_association_id:
+                    logger.info(f"✅ Pod Identity Association created: {pod_identity_association_id}")
+                else:
+                    logger.warning(f"⚠️ Failed to create Pod Identity Association")
+            else:
+                logger.error(f"❌ Failed to create IAM Role for user {user_id}")
+
         # Create OpenClawInstance
         instance, instance_created = create_openclaw_instance(
             k8s_client,
@@ -88,7 +118,8 @@ def provision(user_info):
             namespace,
             user_email,
             cognito_sub,
-            custom_config
+            custom_config,
+            role_arn=role_arn
         )
 
         # Build response
@@ -106,9 +137,16 @@ def provision(user_info):
                 "namespace": ns_created,
                 "resource_quota": quota_created,
                 "network_policy": netpol_created,
-                "openclaw_instance": instance_created
+                "openclaw_instance": instance_created,
+                "iam_role": role_arn is not None if Config.USE_POD_IDENTITY else None,
+                "pod_identity_association": pod_identity_association_id is not None if Config.USE_POD_IDENTITY else None
             }
         }
+
+        if Config.USE_POD_IDENTITY and role_arn:
+            response["iam_role_arn"] = role_arn
+            if pod_identity_association_id:
+                response["pod_identity_association_id"] = pod_identity_association_id
 
         status_code = 201 if instance_created else 200
         logger.info(f"✅ Provisioning completed: {user_email} ({status})")

@@ -6,7 +6,7 @@ import copy
 
 logger = logging.getLogger(__name__)
 
-def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None):
+def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None, role_arn=None):
     """
     Create an OpenClawInstance CRD
 
@@ -17,6 +17,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         user_email: User email address
         cognito_sub: Cognito Sub ID (optional)
         custom_config: Custom configuration to override defaults (optional)
+        role_arn: IAM Role ARN for Pod Identity (optional)
 
     Returns:
         Tuple of (instance, created)
@@ -57,9 +58,6 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                     }
                 }
             },
-            "envFrom": [
-                {"secretRef": {"name": config['aws_credentials_secret']}}
-            ],
             "resources": config['resources'],
             "availability": {
                 "runtimeClassName": config['runtime_class'],
@@ -96,7 +94,10 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                     "allowDNS": True
                 },
                 "rbac": {
-                    "createServiceAccount": True
+                    "createServiceAccount": True,
+                    "serviceAccountAnnotations": {
+                        "eks.amazonaws.com/role-arn": role_arn
+                    } if role_arn else {}
                 }
             },
             "observability": {

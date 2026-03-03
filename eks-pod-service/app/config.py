@@ -58,12 +58,19 @@ class Config:
     # 日志
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
+    # AWS 配置
+    AWS_REGION = os.environ.get('AWS_REGION', 'us-west-2')
+    AWS_ACCOUNT_ID = os.environ.get('AWS_ACCOUNT_ID', '')  # AWS Account ID for Cognito ARN
+
+    # EKS 配置
+    EKS_CLUSTER_NAME = os.environ.get('EKS_CLUSTER_NAME', 'test-s4')
+    USE_POD_IDENTITY = os.environ.get('USE_POD_IDENTITY', 'true').lower() == 'true'
+
     # Cognito JWT 验证配置
     COGNITO_REGION = os.environ.get('COGNITO_REGION', 'us-west-2')
     COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', 'us-west-2_gvOCTiLQE')
     COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', 'f5qd2udi8508dd132d72qn7uc')
     COGNITO_USER_POOL_DOMAIN = os.environ.get('COGNITO_USER_POOL_DOMAIN', '')  # e.g., your-domain.auth.us-west-2.amazoncognito.com
-    AWS_ACCOUNT_ID = os.environ.get('AWS_ACCOUNT_ID', '')  # AWS Account ID for Cognito ARN
 
     # Ingress 配置（Internal ALB + API Gateway）
     INGRESS_ENABLED = os.environ.get('INGRESS_ENABLED', 'true').lower() == 'true'
