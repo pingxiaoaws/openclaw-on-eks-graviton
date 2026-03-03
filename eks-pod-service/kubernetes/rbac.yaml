@@ -30,6 +30,11 @@ rules:
     resources: ["networkpolicies"]
     verbs: ["create", "get", "list"]
 
+  # Ingress (for keeper ingress management)
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["create", "get", "list", "update", "patch"]
+
   # OpenClawInstance CRD
   - apiGroups: ["openclaw.rocks"]
     resources: ["openclawinstances"]
