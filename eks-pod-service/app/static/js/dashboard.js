@@ -117,10 +117,11 @@ const Dashboard = {
         document.getElementById('instance-namespace').textContent = instance.namespace;
         document.getElementById('instance-created').textContent = new Date(instance.created_at).toLocaleString();
 
-        // Update status badge
+        // Update status badge with detailed message
         const statusEl = document.getElementById('instance-status');
         const status = instance.status || 'Pending';
-        statusEl.textContent = status;
+        const statusMessage = instance.status_message || status;
+        statusEl.textContent = statusMessage;
         statusEl.className = `status-badge status-${status.toLowerCase()}`;
 
         // Update gateway endpoint
@@ -133,14 +134,21 @@ const Dashboard = {
             document.getElementById('copy-gateway-btn').disabled = true;
         }
 
-        // Update connect button
+        // Update connect button based on ready_for_connect flag
         const connectBtn = document.getElementById('connect-btn');
-        if (status === 'Running' && (instance.api_gateway_url || instance.gateway_endpoint)) {
+        const readyForConnect = instance.ready_for_connect === true;
+
+        if (readyForConnect) {
             connectBtn.disabled = false;
             connectBtn.innerHTML = '<span>🔗</span> Connect to Gateway';
         } else {
             connectBtn.disabled = true;
-            connectBtn.innerHTML = '<span>⏳</span> Starting...';
+            // Show specific waiting message
+            if (instance.status_message) {
+                connectBtn.innerHTML = `<span>⏳</span> ${instance.status_message}`;
+            } else {
+                connectBtn.innerHTML = '<span>⏳</span> Starting...';
+            }
         }
 
         // Disable create button when instance exists

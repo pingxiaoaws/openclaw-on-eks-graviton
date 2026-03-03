@@ -65,20 +65,36 @@ def status(user_info, user_id):
             name=instance_name
         )
 
-        # Get Pod status
+        # Get Pod status with detailed readiness checks
+        pod_status = []
+        pods_ready = False
         try:
             pods = k8s_client.core_v1.list_namespaced_pod(
                 namespace=namespace,
                 label_selector=f"app.kubernetes.io/instance={instance_name}"
             )
-            pod_status = []
             for pod in pods.items:
+                containers_ready = False
+                if pod.status.container_statuses:
+                    containers_ready = all(cs.ready for cs in pod.status.container_statuses)
+
                 pod_status.append({
                     "name": pod.metadata.name,
                     "phase": pod.status.phase,
-                    "ready": all(cs.ready for cs in pod.status.container_statuses) if pod.status.container_statuses else False
+                    "ready": containers_ready,
+                    "containers": len(pod.status.container_statuses) if pod.status.container_statuses else 0,
+                    "containers_ready": sum(1 for cs in pod.status.container_statuses if cs.ready) if pod.status.container_statuses else 0
                 })
-        except:
+
+            # Pods are ready if at least one pod is Running and all containers are ready
+            pods_ready = any(
+                pod.status.phase == "Running" and
+                pod.status.container_statuses and
+                all(cs.ready for cs in pod.status.container_statuses)
+                for pod in pods.items
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read pod status: {str(e)}")
             pod_status = []
 
         # Extract status from OpenClawInstance
@@ -89,8 +105,24 @@ def status(user_info, user_id):
         # Get creation timestamp
         created_at = instance.get('metadata', {}).get('creationTimestamp', '')
 
+        # Check Service endpoints readiness
+        service_ready = False
+        try:
+            endpoints = k8s_client.core_v1.read_namespaced_endpoints(
+                name=instance_name,
+                namespace=namespace
+            )
+            # Service is ready if it has at least one ready endpoint
+            service_ready = bool(
+                endpoints.subsets and
+                any(subset.addresses for subset in endpoints.subsets)
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read service endpoints: {str(e)}")
+
         # Get gateway token from Secret (needed for accessing OpenClaw gateway)
         gateway_token = None
+        gateway_token_exists = False
         try:
             import base64
             secret = k8s_client.core_v1.read_namespaced_secret(
@@ -98,13 +130,40 @@ def status(user_info, user_id):
                 namespace=namespace
             )
             gateway_token = base64.b64decode(secret.data.get('token', '')).decode('utf-8')
+            gateway_token_exists = bool(gateway_token)
         except Exception as e:
             logger.warning(f"⚠️ Could not read gateway token: {str(e)}")
+
+        # Determine overall readiness for connection
+        # All conditions must be met: phase=Running, pods ready, service ready, token exists
+        ready_for_connect = (
+            phase == 'Running' and
+            pods_ready and
+            service_ready and
+            gateway_token_exists
+        )
+
+        # Generate detailed status message for UI
+        if phase != 'Running':
+            status_message = f"Instance is {phase}"
+        elif not pods_ready:
+            if not pod_status:
+                status_message = "Waiting for pods to start..."
+            else:
+                ready_containers = pod_status[0].get('containers_ready', 0)
+                total_containers = pod_status[0].get('containers', 0)
+                status_message = f"Starting containers ({ready_containers}/{total_containers} ready)..."
+        elif not service_ready:
+            status_message = "Waiting for service endpoints..."
+        elif not gateway_token_exists:
+            status_message = "Waiting for gateway token..."
+        else:
+            status_message = "Ready"
 
         # Build API Gateway URL for external access (with gateway token)
         from app.config import Config
         api_gateway_url = None
-        if Config.INGRESS_ENABLED and phase == 'Running' and gateway_token:
+        if Config.INGRESS_ENABLED and ready_for_connect and gateway_token:
             # Include token as query parameter for OpenClaw gateway authentication
             api_gateway_url = f"{Config.API_GATEWAY_ENDPOINT}/{Config.API_GATEWAY_STAGE}/instance/{user_id}/?token={gateway_token}"
 
@@ -113,11 +172,19 @@ def status(user_info, user_id):
             "namespace": namespace,
             "instance_name": instance_name,
             "status": phase,  # Simple string: "Running", "Pending", etc.
+            "ready_for_connect": ready_for_connect,  # Boolean: true when safe to connect
+            "status_message": status_message,  # Human-readable status for UI
             "gateway_endpoint": gateway_endpoint,  # Internal cluster endpoint
             "api_gateway_url": api_gateway_url,  # External API Gateway URL (with token)
-            "gateway_token": gateway_token,  # Gateway token for accessing instance
+            "gateway_token": gateway_token if ready_for_connect else None,  # Only expose token when ready
             "created_at": created_at,
             "pods": pod_status,
+            "readiness_checks": {  # Detailed readiness info for debugging
+                "phase_running": phase == 'Running',
+                "pods_ready": pods_ready,
+                "service_ready": service_ready,
+                "gateway_token_exists": gateway_token_exists
+            },
             "raw_status": instance_status  # Keep full status for debugging
         }
 
