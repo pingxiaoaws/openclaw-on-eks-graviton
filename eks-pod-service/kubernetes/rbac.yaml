@@ -40,6 +40,16 @@ rules:
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
 
+  # Endpoints queries (for readiness checking)
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list"]
+
+  # Secrets queries (for gateway token retrieval)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+
   # StatefulSet queries (for status checking)
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
