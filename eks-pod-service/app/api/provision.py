@@ -2,7 +2,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from app.k8s.client import K8sClient
 from app.k8s.namespace import create_namespace
-from app.k8s.quota import create_resource_quota
+# from app.k8s.quota import create_resource_quota  # Disabled: operator's init-config lacks resources
 from app.k8s.netpol import create_network_policy
 from app.k8s.instance import create_openclaw_instance
 from app.aws.iam import create_pod_identity_role, create_pod_identity_association
@@ -77,8 +77,8 @@ def provision(user_info):
         # Create Namespace
         ns, ns_created = create_namespace(k8s_client, user_id)
 
-        # Create ResourceQuota
-        quota, quota_created = create_resource_quota(k8s_client, namespace)
+        # Create ResourceQuota - DISABLED: operator's init-config container lacks resources spec
+        # quota, quota_created = create_resource_quota(k8s_client, namespace)
 
         # Create NetworkPolicy
         netpol, netpol_created = create_network_policy(k8s_client, namespace)
@@ -135,7 +135,7 @@ def provision(user_info):
             "message": f"Instance {status} successfully",
             "resources_created": {
                 "namespace": ns_created,
-                "resource_quota": quota_created,
+                # "resource_quota": quota_created,  # Removed: not creating ResourceQuota
                 "network_policy": netpol_created,
                 "openclaw_instance": instance_created,
                 "iam_role": role_arn is not None if Config.USE_POD_IDENTITY else None,
