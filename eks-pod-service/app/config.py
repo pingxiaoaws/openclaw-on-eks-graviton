@@ -75,7 +75,7 @@ class Config:
     # Ingress 配置（Internal ALB + API Gateway）
     INGRESS_ENABLED = os.environ.get('INGRESS_ENABLED', 'true').lower() == 'true'
     INGRESS_CLASS = os.environ.get('INGRESS_CLASS', 'alb')
-    INGRESS_GROUP_NAME = os.environ.get('INGRESS_GROUP_NAME', 'openclaw-instances')
+    INGRESS_GROUP_NAME = os.environ.get('INGRESS_GROUP_NAME', 'openclaw-shared-instances')
     INGRESS_SCHEME = os.environ.get('INGRESS_SCHEME', 'internal')  # Internal ALB（不暴露公网）
     INGRESS_TARGET_TYPE = os.environ.get('INGRESS_TARGET_TYPE', 'ip')  # IP mode for better performance
 
