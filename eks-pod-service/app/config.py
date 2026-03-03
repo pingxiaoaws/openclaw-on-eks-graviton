@@ -69,7 +69,7 @@ class Config:
     # Cognito JWT 验证配置
     COGNITO_REGION = os.environ.get('COGNITO_REGION', 'us-west-2')
     COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', 'us-west-2_gvOCTiLQE')
-    COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', 'f5qd2udi8508dd132d72qn7uc')
+    COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', '7hu644gbgodv2bap8cq6eb02n7')  # No secret
     COGNITO_USER_POOL_DOMAIN = os.environ.get('COGNITO_USER_POOL_DOMAIN', '')  # e.g., your-domain.auth.us-west-2.amazoncognito.com
 
     # Ingress 配置（Internal ALB + API Gateway）
