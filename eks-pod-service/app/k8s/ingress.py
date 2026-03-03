@@ -55,6 +55,14 @@ def ensure_keeper_ingress():
                     "alb.ingress.kubernetes.io/healthcheck-path": "/health",
                     "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
                     "alb.ingress.kubernetes.io/success-codes": "200",
+                    # Target Group Attributes - WebSocket optimization
+                    "alb.ingress.kubernetes.io/target-group-attributes": (
+                        "stickiness.enabled=true,"
+                        "stickiness.type=lb_cookie,"
+                        "stickiness.lb_cookie.duration_seconds=3600,"
+                        "deregistration_delay.timeout_seconds=60,"
+                        "load_balancing.algorithm.type=least_outstanding_requests"
+                    ),
                 },
                 labels={
                     "app": "openclaw-instances-keeper",

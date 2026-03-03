@@ -168,6 +168,15 @@ def _build_ingress_config(user_id):
             f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-path": f"/instance/{user_id}/",
             f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
             f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/success-codes": "200,404",  # 404 ok if gateway requires auth
+
+            # Target Group Attributes - WebSocket optimization
+            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/target-group-attributes": (
+                "stickiness.enabled=true,"
+                "stickiness.type=lb_cookie,"
+                "stickiness.lb_cookie.duration_seconds=3600,"
+                "deregistration_delay.timeout_seconds=60,"
+                "load_balancing.algorithm.type=least_outstanding_requests"
+            ),
         },
         # Path-based routing only (no host - accessed via API Gateway)
         "hosts": [{
