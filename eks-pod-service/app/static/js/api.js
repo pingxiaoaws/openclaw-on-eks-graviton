@@ -112,6 +112,9 @@ const API = {
             throw new Error('Invalid instance');
         }
 
+        // Initialize portForwardCmd variable outside the if/else
+        let portForwardCmd = null;
+
         // Use API Gateway URL if available, otherwise show port-forward instructions
         if (instance.api_gateway_url) {
             // Open API Gateway URL in new tab (already authenticated via JWT)
@@ -119,10 +122,13 @@ const API = {
         } else {
             // Fallback: show port-forward instructions
             const userId = instance.user_id;
-            const portForwardCmd = `kubectl port-forward -n openclaw-${userId} svc/openclaw-${userId} 18789:18789`;
+            portForwardCmd = `kubectl port-forward -n openclaw-${userId} svc/openclaw-${userId} 18789:18789`;
             alert(`Instance Gateway Endpoint:\n\n${instance.gateway_endpoint}\n\nNote: API Gateway route not configured. Use port-forwarding:\n\n${portForwardCmd}\n\nThen open: http://localhost:18789/`);
         }
-        console.log('Port-forward command:', portForwardCmd);
+
+        if (portForwardCmd) {
+            console.log('Port-forward command:', portForwardCmd);
+        }
 
         return {
             endpoint: instance.gateway_endpoint,

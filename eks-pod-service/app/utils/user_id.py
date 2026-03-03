@@ -9,6 +9,8 @@ def generate_user_id(email: str) -> str:
         email: User email address
 
     Returns:
-        8-character user ID (MD5 hash prefix)
+        8-character user ID (SHA-256 hash prefix)
     """
-    return hashlib.md5(email.encode()).hexdigest()[:8]
+    # Normalize email to lowercase for consistency
+    normalized_email = email.lower()
+    return hashlib.sha256(normalized_email.encode()).hexdigest()[:8]
