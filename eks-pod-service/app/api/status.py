@@ -89,11 +89,24 @@ def status(user_info, user_id):
         # Get creation timestamp
         created_at = instance.get('metadata', {}).get('creationTimestamp', '')
 
-        # Build API Gateway URL for external access
+        # Get gateway token from Secret (needed for accessing OpenClaw gateway)
+        gateway_token = None
+        try:
+            import base64
+            secret = k8s_client.core_v1.read_namespaced_secret(
+                name=f"{instance_name}-gateway-token",
+                namespace=namespace
+            )
+            gateway_token = base64.b64decode(secret.data.get('token', '')).decode('utf-8')
+        except Exception as e:
+            logger.warning(f"⚠️ Could not read gateway token: {str(e)}")
+
+        # Build API Gateway URL for external access (with gateway token)
         from app.config import Config
         api_gateway_url = None
-        if Config.INGRESS_ENABLED and phase == 'Running':
-            api_gateway_url = f"{Config.API_GATEWAY_ENDPOINT}/{Config.API_GATEWAY_STAGE}/instance/{user_id}/"
+        if Config.INGRESS_ENABLED and phase == 'Running' and gateway_token:
+            # Include token as query parameter for OpenClaw gateway authentication
+            api_gateway_url = f"{Config.API_GATEWAY_ENDPOINT}/{Config.API_GATEWAY_STAGE}/instance/{user_id}/?token={gateway_token}"
 
         response = {
             "user_id": user_id,
@@ -101,7 +114,8 @@ def status(user_info, user_id):
             "instance_name": instance_name,
             "status": phase,  # Simple string: "Running", "Pending", etc.
             "gateway_endpoint": gateway_endpoint,  # Internal cluster endpoint
-            "api_gateway_url": api_gateway_url,  # External API Gateway URL (with JWT auth)
+            "api_gateway_url": api_gateway_url,  # External API Gateway URL (with token)
+            "gateway_token": gateway_token,  # Gateway token for accessing instance
             "created_at": created_at,
             "pods": pod_status,
             "raw_status": instance_status  # Keep full status for debugging
