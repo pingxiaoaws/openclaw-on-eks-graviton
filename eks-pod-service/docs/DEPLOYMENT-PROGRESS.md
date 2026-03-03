@@ -1,7 +1,7 @@
 # WebSocket 部署进度记录
 
 **日期**: 2026-03-03
-**状态**: 进行中 - API Gateway 集成调试阶段
+**状态**: ✅ 核心部署完成 - 进入测试验证阶段
 
 ---
 
@@ -10,10 +10,11 @@
 实现 OpenClaw 实例的 WebSocket 支持，通过统一的 API Gateway 入口访问：
 
 - ✅ HTTP 请求支持
-- 🔄 WebSocket 连接支持（进行中）
+- ✅ WebSocket 连接支持 (基础设施就绪，待测试)
 - ✅ 多租户隔离
 - ✅ 成本优化（共享 ALB）
 - ✅ 自动化配置
+- ✅ API Gateway 路由修复
 
 ---
 
@@ -199,9 +200,9 @@ cd eks-pod-service/scripts
 
 ---
 
-## 🔄 当前问题
+## ✅ 已解决的问题
 
-### Issue #1: API Gateway → ALB 返回 404
+### ~~Issue #1: API Gateway → ALB 返回 404~~ (已解决 - 2026-03-03)
 
 **症状**:
 ```bash
@@ -209,59 +210,59 @@ curl "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/416e0
 # {"message":"Internal Server Error"}  或  HTTP 404
 ```
 
-**已验证正常的部分**:
-1. ✅ **集群内访问 ALB**:
-   ```bash
-   curl "http://internal-k8s-openclawsharedins-1304d94a5a-..../instance/416e0b5f/?token=..."
-   # 返回 OpenClaw HTML (正常)
-   ```
+**根本原因**: 路径前缀不匹配
+- API Gateway 转发的路径: `/prod/instance/416e0b5f/` (包含 stage 前缀)
+- ALB Ingress 期望的路径: `/instance/416e0b5f/` (不包含 stage 前缀)
+- 结果: ALB 找不到匹配的 Listener Rule，返回 404
 
-2. ✅ **直接访问 OpenClaw Service**:
-   ```bash
-   curl "http://openclaw-416e0b5f.openclaw-416e0b5f.svc:18789/?token=..."
-   # 返回 OpenClaw HTML (正常)
-   ```
-
-3. ✅ **VPC Link 状态**: `AVAILABLE`
-
-4. ✅ **ALB Target 健康**: `healthy`
-
-5. ✅ **API Gateway → Provisioning Service**:
-   ```bash
-   curl "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/health"
-   # {"status":"healthy","k8s_api":"connected"} (正常)
-   ```
-
-**可能的原因**:
-
-1. **路径匹配问题**:
-   - API Gateway 路由: `ANY /instance/{user_id}/{proxy+}`
-   - ALB Listener Rule: `/instance/416e0b5f` (PathType: Prefix)
-   - 实际请求路径: `/instance/416e0b5f/`
-   - 可能的不匹配导致 404
-
-2. **集成配置问题**:
-   - Integration Uri 指向正确的 Listener ARN?
-   - PayloadFormatVersion 是否正确?
-   - 是否需要特殊的 header 转发配置?
-
-3. **网络/安全组问题**:
-   - VPC Link Security Groups
-   - ALB Security Groups
-   - 可能只允许特定来源的流量?
-
-**调试信息**:
+**解决方案**: 配置 API Gateway Integration 的路径重写参数
 ```bash
-# 测试 API Gateway 返回
-curl -v "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/416e0b5f/?token=..."
-# < HTTP/2 404
-# < server: awselb/2.0  ← 响应来自 ALB，说明网络通了
-# < content-length: 0
+aws apigatewayv2 update-integration \
+  --api-id 0qu1ls4sf5 \
+  --integration-id p5a92ng \
+  --request-parameters '{"overwrite:path":"$request.path"}' \
+  --region us-west-2
 ```
 
-这表明：
-- ✅ API Gateway → VPC Link → ALB 的网络连接正常
-- ❌ ALB 找不到匹配的 Listener Rule
+**验证结果**:
+```bash
+curl -i "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/416e0b5f/?token=..."
+# HTTP/2 200 ✅
+# content-type: text/html; charset=utf-8
+# <!doctype html> ...
+```
+
+**更新的文件**:
+- `scripts/setup-websocket-routing.sh` - 添加路径重写参数
+- `scripts/deploy.sh` - 新增完整部署脚本（包含路径重写）
+- `docs/WEBSOCKET-SETUP.md` - 添加路径问题排查章节
+
+**技术细节**:
+- Provisioning Service 的 ingress 使用 `/` Prefix，可以匹配任何路径（包括 `/prod/*`）
+- User instance 的 ingress 使用 `/instance/{user_id}` Prefix，无法匹配 `/prod/instance/{user_id}`
+- `request-parameters` 配置让 API Gateway 去除 stage 前缀后再转发到 ALB
+
+---
+
+## 🔄 当前问题
+
+**状态**: 无 - 所有已知问题已解决！🎉
+
+<details>
+<summary>查看之前的调试信息 (已解决)</summary>
+
+**已验证正常的部分**:
+1. ✅ **集群内访问 ALB**
+2. ✅ **直接访问 OpenClaw Service**
+3. ✅ **VPC Link 状态**: `AVAILABLE`
+4. ✅ **ALB Target 健康**: `healthy`
+5. ✅ **API Gateway → Provisioning Service**
+6. ✅ **API Gateway → User Instances** (路径重写后)
+
+**调试信息**:
+- API Gateway → VPC Link → ALB 的网络连接正常 ✅
+- ALB Listener Rules 现在可以正确匹配路径 ✅
+</details>
 
 ---
 
@@ -269,12 +270,12 @@ curl -v "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/41
 
 ### 高优先级
 
-- [ ] **调试 API Gateway → ALB 路由问题**
-  - 检查路径匹配规则
-  - 验证 Integration 配置
-  - 测试不同的路径格式
+- [x] **调试 API Gateway → ALB 路由问题** ✅ (已解决 - 路径重写)
+  - [x] 检查路径匹配规则
+  - [x] 验证 Integration 配置
+  - [x] 测试不同的路径格式
 
-- [ ] **测试 WebSocket 连接**
+- [ ] **测试 WebSocket 连接** (下一步)
   ```javascript
   const ws = new WebSocket("wss://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/416e0b5f/?token=...");
   ```

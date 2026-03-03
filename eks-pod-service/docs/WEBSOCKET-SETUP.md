@@ -111,6 +111,7 @@ Shared Listener ARN: arn:aws:elasticloadbalancing:us-west-2:970547376847:listene
 
 ```bash
 # Create integration pointing to shared ALB
+# IMPORTANT: Include request-parameters to strip stage prefix (/prod)
 WS_INTEGRATION=$(aws apigatewayv2 create-integration \
   --api-id 0qu1ls4sf5 \
   --integration-type HTTP_PROXY \
@@ -119,6 +120,7 @@ WS_INTEGRATION=$(aws apigatewayv2 create-integration \
   --connection-id kn1heg \
   --integration-method ANY \
   --payload-format-version "1.0" \
+  --request-parameters '{"overwrite:path":"$request.path"}' \
   --region us-west-2 \
   --output json)
 
@@ -126,6 +128,8 @@ WS_INTEGRATION_ID=$(echo "$WS_INTEGRATION" | jq -r '.IntegrationId')
 
 echo "WebSocket Integration ID: $WS_INTEGRATION_ID"
 ```
+
+**⚠️ Critical**: The `--request-parameters '{"overwrite:path":"$request.path"}'` parameter is **required** to ensure proper path routing. Without it, API Gateway forwards paths with the stage prefix (e.g., `/prod/instance/416e0b5f`), but ALB ingress rules expect paths without the prefix (e.g., `/instance/416e0b5f`), causing 404 errors.
 
 **Verify integration:**
 ```bash
@@ -326,6 +330,51 @@ ws.onmessage = (msg) => console.log("📨 Message:", msg.data);
    ```bash
    kubectl get networkpolicy -n openclaw-${USER_ID}
    ```
+
+---
+
+### Issue: API Gateway returns 404 even though ALB is healthy
+
+**Cause:** Path mismatch between API Gateway and ALB Ingress rules
+
+**Details:**
+- API Gateway forwards requests with stage prefix: `/prod/instance/416e0b5f/`
+- ALB Ingress rules expect paths without stage: `/instance/416e0b5f/`
+- Result: ALB returns 404 (no matching rule)
+
+**Solution:**
+Add `request-parameters` to the integration to handle path rewriting:
+
+```bash
+aws apigatewayv2 update-integration \
+  --api-id 0qu1ls4sf5 \
+  --integration-id "$WS_INTEGRATION_ID" \
+  --request-parameters '{"overwrite:path":"$request.path"}' \
+  --region us-west-2
+```
+
+**Verification:**
+```bash
+# Before fix: 404
+curl -i "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/416e0b5f/?token=..."
+# HTTP/2 404
+
+# After fix: 200
+curl -i "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/416e0b5f/?token=..."
+# HTTP/2 200
+```
+
+**Alternative solutions:**
+1. **Update Ingress paths** (not recommended):
+   ```yaml
+   # Change path to include stage prefix
+   path: /prod/instance/416e0b5f  # Instead of /instance/416e0b5f
+   ```
+   Problem: Requires updating all user ingress resources
+
+2. **Use Provisioning Service as proxy** (not recommended):
+   - Adds latency and complexity
+   - Python `requests` library doesn't support WebSocket
 
 ---
 

@@ -91,8 +91,20 @@ EXISTING_INTEGRATION=$(aws apigatewayv2 get-integrations \
 if [ -n "$EXISTING_INTEGRATION" ]; then
   echo "   ℹ️  Integration already exists: $EXISTING_INTEGRATION"
   WS_INTEGRATION_ID="$EXISTING_INTEGRATION"
+
+  # Ensure path rewriting is configured
+  echo "   🔧 Updating integration to ensure path rewriting..."
+  aws apigatewayv2 update-integration \
+    --api-id "$API_ID" \
+    --integration-id "$WS_INTEGRATION_ID" \
+    --request-parameters '{"overwrite:path":"$request.path"}' \
+    --region "$REGION" \
+    --output json > /dev/null
+
+  echo "   ✅ Path rewriting configured"
 else
-  # Create new integration
+  # Create new integration with path rewriting
+  # CRITICAL: request-parameters strips stage prefix (/prod) to match ALB ingress paths
   WS_INTEGRATION=$(aws apigatewayv2 create-integration \
     --api-id "$API_ID" \
     --integration-type HTTP_PROXY \
@@ -101,11 +113,13 @@ else
     --connection-id "$VPC_LINK_ID" \
     --integration-method ANY \
     --payload-format-version "1.0" \
+    --request-parameters '{"overwrite:path":"$request.path"}' \
     --region "$REGION" \
     --output json)
 
   WS_INTEGRATION_ID=$(echo "$WS_INTEGRATION" | jq -r '.IntegrationId')
   echo "   ✅ Integration created: $WS_INTEGRATION_ID"
+  echo "   ✅ Path rewriting configured (strips /prod prefix)"
 fi
 
 echo ""
