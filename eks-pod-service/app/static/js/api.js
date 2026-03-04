@@ -70,7 +70,7 @@ const API = {
     },
 
     // Create new instance
-    async createInstance(runtimeMode = 'runc') {
+    async createInstance(runtimeMode = 'runc', provider = 'bedrock', siliconflowApiKey = null) {
         const config = {};
         if (runtimeMode === 'kata-qemu') {
             config.runtime_class = 'kata-qemu';
@@ -84,9 +84,13 @@ const API = {
         } else {
             config.storage_class = 'efs-sc';
         }
+        const body = { config, provider };
+        if (provider === 'siliconflow' && siliconflowApiKey) {
+            body.siliconflow_api_key = siliconflowApiKey;
+        }
         return this.request('/provision', {
             method: 'POST',
-            body: JSON.stringify({ config })
+            body: JSON.stringify(body)
         });
     },
 

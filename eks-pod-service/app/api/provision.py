@@ -64,12 +64,24 @@ def provision(user_info):
         data = request.get_json() or {}
         custom_config = data.get('config', {})
 
+        # Get provider choice (default: bedrock)
+        provider = data.get('provider', 'bedrock')
+        if provider not in ('bedrock', 'siliconflow'):
+            return jsonify({"error": "Invalid provider. Must be 'bedrock' or 'siliconflow'"}), 400
+
+        # Validate SiliconFlow API key (user-provided)
+        siliconflow_api_key = None
+        if provider == 'siliconflow':
+            siliconflow_api_key = data.get('siliconflow_api_key', '').strip()
+            if not siliconflow_api_key:
+                return jsonify({"error": "SiliconFlow API key is required"}), 400
+
         # Generate user_id
         user_id = generate_user_id(user_email)
         namespace = f"openclaw-{user_id}"
         instance_name = f"openclaw-{user_id}"
 
-        logger.info(f"📥 Provisioning request: {user_email} (user_id: {user_id})")
+        logger.info(f"📥 Provisioning request: {user_email} (user_id: {user_id}, provider: {provider})")
 
         # Initialize K8s client
         k8s_client = K8sClient()
@@ -83,10 +95,10 @@ def provision(user_info):
         # Create NetworkPolicy
         netpol, netpol_created = create_network_policy(k8s_client, namespace)
 
-        # Create IAM Role and Pod Identity Association (if enabled)
+        # Create IAM Role and Pod Identity Association (only needed for Bedrock)
         role_arn = None
         pod_identity_association_id = None
-        if Config.USE_POD_IDENTITY:
+        if Config.USE_POD_IDENTITY and provider == 'bedrock':
             logger.info(f"🔐 Creating IAM Role for Pod Identity: user_id={user_id}")
             role_arn = create_pod_identity_role(user_id, region=Config.AWS_REGION)
 
@@ -119,7 +131,9 @@ def provision(user_info):
             user_email,
             cognito_sub,
             custom_config,
-            role_arn=role_arn
+            role_arn=role_arn,
+            provider=provider,
+            siliconflow_api_key=siliconflow_api_key
         )
 
         # Build response

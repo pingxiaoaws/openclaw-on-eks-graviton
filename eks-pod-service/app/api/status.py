@@ -105,6 +105,9 @@ def status(user_info, user_id):
         # Get creation timestamp
         created_at = instance.get('metadata', {}).get('creationTimestamp', '')
 
+        # Get LLM provider from label
+        llm_provider = instance.get('metadata', {}).get('labels', {}).get('openclaw.rocks/llm-provider', 'bedrock')
+
         # Check Service endpoints readiness
         service_ready = False
         try:
@@ -178,6 +181,7 @@ def status(user_info, user_id):
             "api_gateway_url": api_gateway_url,  # External API Gateway URL (with token)
             "gateway_token": gateway_token if ready_for_connect else None,  # Only expose token when ready
             "created_at": created_at,
+            "llm_provider": llm_provider,  # 'bedrock' or 'siliconflow'
             "pods": pod_status,
             "readiness_checks": {  # Detailed readiness info for debugging
                 "phase_running": phase == 'Running',

@@ -70,6 +70,36 @@ const Dashboard = {
                 btn.classList.add('active');
             });
         });
+
+        // Provider selector toggle
+        document.querySelectorAll('.provider-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.provider-option').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                // Show/hide API key input
+                const apiKeyGroup = document.getElementById('siliconflow-apikey-group');
+                if (btn.dataset.provider === 'siliconflow') {
+                    apiKeyGroup.classList.remove('hidden');
+                } else {
+                    apiKeyGroup.classList.add('hidden');
+                }
+            });
+        });
+
+        // API key show/hide toggle
+        const toggleKeyBtn = document.getElementById('toggle-apikey-btn');
+        if (toggleKeyBtn) {
+            toggleKeyBtn.addEventListener('click', () => {
+                const input = document.getElementById('siliconflow-apikey');
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    toggleKeyBtn.textContent = '🙈';
+                } else {
+                    input.type = 'password';
+                    toggleKeyBtn.textContent = '👁️';
+                }
+            });
+        }
     },
 
     // Handle logout
@@ -143,6 +173,17 @@ const Dashboard = {
             }
         }
 
+        // Update provider badge
+        const providerEl = document.getElementById('instance-provider');
+        if (providerEl) {
+            const llmProvider = instance.llm_provider || 'bedrock';
+            if (llmProvider === 'siliconflow') {
+                providerEl.innerHTML = '<span class="runtime-badge runtime-kata">🤖 SiliconFlow</span>';
+            } else {
+                providerEl.innerHTML = '<span class="runtime-badge runtime-runc">☁️ Bedrock</span>';
+            }
+        }
+
         // Update storage badge
         const storageEl = document.getElementById('instance-storage');
         if (storageEl) {
@@ -197,7 +238,25 @@ const Dashboard = {
         const runtimeLabel = selectedRuntime === 'kata-qemu' ? 'Secure VM (Kata)' : 'Standard';
         const storageLabel = selectedRuntime === 'kata-qemu' ? 'EBS (gp3)' : 'EFS (elastic)';
 
-        if (!confirm(`Create a new OpenClaw instance?\n\nRuntime: ${runtimeLabel}\nStorage: ${storageLabel}\n\nThis may take a few minutes.`)) {
+        // Get selected provider
+        const selectedProvider = document.querySelector('.provider-option.active')?.dataset.provider || 'bedrock';
+        const providerLabel = selectedProvider === 'siliconflow' ? 'SiliconFlow' : 'Bedrock';
+
+        // Validate SiliconFlow API key
+        let siliconflowApiKey = null;
+        if (selectedProvider === 'siliconflow') {
+            siliconflowApiKey = document.getElementById('siliconflow-apikey')?.value?.trim();
+            if (!siliconflowApiKey) {
+                this.showError('Please enter your SiliconFlow API key.');
+                return;
+            }
+            if (!siliconflowApiKey.startsWith('sk-')) {
+                this.showError('SiliconFlow API key should start with "sk-".');
+                return;
+            }
+        }
+
+        if (!confirm(`Create a new OpenClaw instance?\n\nProvider: ${providerLabel}\nRuntime: ${runtimeLabel}\nStorage: ${storageLabel}\n\nThis may take a few minutes.`)) {
             return;
         }
 
@@ -207,7 +266,7 @@ const Dashboard = {
         this.hideError();
 
         try {
-            const result = await API.createInstance(selectedRuntime);
+            const result = await API.createInstance(selectedRuntime, selectedProvider, siliconflowApiKey);
             console.log('Instance created:', result);
 
             this.showSuccess('Instance creation started! Refreshing...');

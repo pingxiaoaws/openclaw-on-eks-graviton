@@ -549,6 +549,95 @@
             border: 1px solid rgba(255, 107, 53, 0.3);
         }
 
+        /* Provider selector (reuses runtime-selector styles) */
+        .provider-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            white-space: nowrap;
+        }
+
+        .provider-option:hover:not(.active) {
+            color: var(--text-primary);
+            background: rgba(139, 147, 167, 0.1);
+        }
+
+        .provider-option.active[data-provider="bedrock"] {
+            background: rgba(0, 212, 255, 0.2);
+            color: var(--cyber-cyan);
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+        }
+
+        .provider-option.active[data-provider="siliconflow"] {
+            background: rgba(255, 107, 53, 0.2);
+            color: var(--plasma-orange);
+            border: 1px solid rgba(255, 107, 53, 0.4);
+            box-shadow: 0 0 12px rgba(255, 107, 53, 0.15);
+        }
+
+        /* API Key input group */
+        .apikey-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .apikey-input-wrapper {
+            display: flex;
+            align-items: center;
+            background: rgba(10, 14, 26, 0.8);
+            border: 1px solid rgba(139, 147, 167, 0.3);
+            border-radius: 10px;
+            padding: 3px;
+            gap: 2px;
+            transition: border-color 0.25s ease;
+        }
+
+        .apikey-input-wrapper:focus-within {
+            border-color: rgba(255, 107, 53, 0.6);
+            box-shadow: 0 0 12px rgba(255, 107, 53, 0.15);
+        }
+
+        .apikey-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            padding: 8px 12px;
+            width: 280px;
+        }
+
+        .apikey-input::placeholder {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        .btn-toggle-key {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 6px 10px;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+
+        .btn-toggle-key:hover {
+            background: rgba(139, 147, 167, 0.15);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             header {
@@ -596,6 +685,30 @@
 
     <main>
         <div class="actions-bar">
+            <div class="runtime-selector" id="provider-selector">
+                <label>Provider</label>
+                <div class="runtime-options">
+                    <button class="provider-option active" data-provider="bedrock">
+                        <span class="runtime-icon">☁️</span>
+                        <span class="runtime-label">Bedrock</span>
+                    </button>
+                    <button class="provider-option" data-provider="siliconflow">
+                        <span class="runtime-icon">🤖</span>
+                        <span class="runtime-label">SiliconFlow</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="apikey-group hidden" id="siliconflow-apikey-group">
+                <div class="apikey-input-wrapper">
+                    <input type="password" id="siliconflow-apikey"
+                           class="apikey-input"
+                           placeholder="Enter your SiliconFlow API Key (sk-...)"
+                           autocomplete="off" />
+                    <button type="button" id="toggle-apikey-btn" class="btn-toggle-key">👁️</button>
+                </div>
+            </div>
+
             <div class="runtime-selector" id="runtime-selector">
                 <label>Runtime</label>
                 <div class="runtime-options">
@@ -666,6 +779,13 @@
                             <label>Runtime</label>
                             <div class="detail-value" id="instance-runtime">
                                 <span class="runtime-badge runtime-runc">📦 Standard (runc)</span>
+                            </div>
+                        </div>
+
+                        <div class="detail-group">
+                            <label>LLM Provider</label>
+                            <div class="detail-value" id="instance-provider">
+                                <span class="runtime-badge runtime-runc">☁️ Bedrock</span>
                             </div>
                         </div>
 

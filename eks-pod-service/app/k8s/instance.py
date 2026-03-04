@@ -6,7 +6,7 @@ import copy
 
 logger = logging.getLogger(__name__)
 
-def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None, role_arn=None):
+def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None, role_arn=None, provider='bedrock', siliconflow_api_key=None):
     """
     Create an OpenClawInstance CRD
 
@@ -18,6 +18,8 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         cognito_sub: Cognito Sub ID (optional)
         custom_config: Custom configuration to override defaults (optional)
         role_arn: IAM Role ARN for Pod Identity (optional)
+        provider: LLM provider - 'bedrock' or 'siliconflow' (default: 'bedrock')
+        siliconflow_api_key: SiliconFlow API key (required when provider='siliconflow')
 
     Returns:
         Tuple of (instance, created)
@@ -29,6 +31,62 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
     if custom_config:
         _deep_merge(config, custom_config)
 
+    # Build config.raw based on provider
+    if provider == 'siliconflow':
+        sf = Config.SILICONFLOW_DEFAULTS
+        config_raw = {
+            "models": {
+                "providers": {
+                    "siliconflow": {
+                        "baseUrl": sf['base_url'],
+                        "api": "openai-completions",
+                        "auth": "api-key",
+                        "apiKey": siliconflow_api_key,
+                        "models": [{
+                            "id": sf['model'],
+                            "name": "SiliconFlow Model",
+                            "input": ["text"],
+                            "contextWindow": sf['context_window'],
+                            "maxTokens": sf['max_tokens']
+                        }]
+                    }
+                }
+            },
+            "agents": {
+                "defaults": {
+                    "model": {
+                        "primary": f"siliconflow/{sf['model']}"
+                    }
+                }
+            }
+        }
+    else:  # bedrock (default)
+        config_raw = {
+            "agents": {
+                "defaults": {
+                    "model": {
+                        "primary": config['model']
+                    }
+                }
+            }
+        }
+
+    # Build labels
+    labels = {
+        "openclaw.rocks/user-id": user_id,
+        "app.kubernetes.io/managed-by": "openclaw-provisioning-service",
+        "openclaw.rocks/llm-provider": provider
+    }
+
+    # Build RBAC section
+    rbac_config = {
+        "createServiceAccount": True,
+    }
+    if role_arn:
+        rbac_config["serviceAccountAnnotations"] = {
+            "eks.amazonaws.com/role-arn": role_arn
+        }
+
     # Build OpenClawInstance CRD
     instance_body = {
         "apiVersion": "openclaw.rocks/v1alpha1",
@@ -36,10 +94,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         "metadata": {
             "name": instance_name,
             "namespace": namespace,
-            "labels": {
-                "openclaw.rocks/user-id": user_id,
-                "app.kubernetes.io/managed-by": "openclaw-provisioning-service"
-            },
+            "labels": labels,
             "annotations": {
                 "openclaw.rocks/created-at": datetime.utcnow().isoformat(),
                 "openclaw.rocks/provisioning-method": "eks-pod-service",
@@ -48,15 +103,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         },
         "spec": {
             "config": {
-                "raw": {
-                    "agents": {
-                        "defaults": {
-                            "model": {
-                                "primary": config['model']
-                            }
-                        }
-                    }
-                }
+                "raw": config_raw
             },
             "resources": config['resources'],
             "availability": {
@@ -94,12 +141,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                     "enabled": True,
                     "allowDNS": True
                 },
-                "rbac": {
-                    "createServiceAccount": True,
-                    "serviceAccountAnnotations": {
-                        "eks.amazonaws.com/role-arn": role_arn
-                    } if role_arn else {}
-                }
+                "rbac": rbac_config
             },
             "observability": {
                 "metrics": {

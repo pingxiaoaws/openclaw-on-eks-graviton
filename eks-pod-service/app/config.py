@@ -52,6 +52,14 @@ class Config:
         'persistentvolumeclaims': '2'
     }
 
+    # SiliconFlow provider configuration (api_key provided by user at provision time)
+    SILICONFLOW_DEFAULTS = {
+        'base_url': os.environ.get('SILICONFLOW_BASE_URL', 'https://api.siliconflow.cn/v1'),
+        'model': os.environ.get('SILICONFLOW_MODEL', 'Pro/deepseek-ai/DeepSeek-V3'),
+        'context_window': int(os.environ.get('SILICONFLOW_CONTEXT_WINDOW', '65536')),
+        'max_tokens': int(os.environ.get('SILICONFLOW_MAX_TOKENS', '8192')),
+    }
+
     # 超时设置
     K8S_API_TIMEOUT = 30
 
