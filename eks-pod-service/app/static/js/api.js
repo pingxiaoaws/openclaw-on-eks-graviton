@@ -34,6 +34,13 @@ const API = {
             }
 
             if (!response.ok) {
+                // Auto-redirect to login on token expiry
+                if (response.status === 401) {
+                    Auth.logout();
+                    const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
+                    window.location.href = loginPath;
+                    return;
+                }
                 throw new Error(data.error || data.message || `HTTP ${response.status}`);
             }
 
@@ -61,8 +68,9 @@ const API = {
             const userId = await this.calculateUserId(email);
             return this.request(`/status/${userId}`);
         } catch (error) {
-            // If instance doesn't exist, return null instead of throwing
-            if (error.message.includes('404') || error.message.includes('not found')) {
+            // If instance doesn't exist or auth expired, return null instead of throwing
+            if (error.message.includes('404') || error.message.includes('not found')
+                || error.message.includes('401') || error.message.includes('403')) {
                 return null;
             }
             throw error;

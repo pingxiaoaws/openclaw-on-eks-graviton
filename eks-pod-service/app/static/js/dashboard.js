@@ -2,6 +2,7 @@
 const Dashboard = {
     currentInstance: null,
     refreshTimer: null,
+    isDeleting: false,
 
     // Initialize dashboard
     init() {
@@ -10,7 +11,8 @@ const Dashboard = {
         // Check authentication
         if (!Auth.init()) {
             console.log('❌ Not authenticated, redirecting to login');
-            window.location.href = '/login';
+            const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
+            window.location.href = loginPath;
             return;
         }
 
@@ -106,7 +108,8 @@ const Dashboard = {
     handleLogout() {
         this.stopAutoRefresh();
         Auth.logout();
-        window.location.href = '/login';
+        const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
+        window.location.href = loginPath;
     },
 
     // Load user's instance
@@ -125,7 +128,14 @@ const Dashboard = {
             }
         } catch (error) {
             console.error('Failed to load instance:', error);
-            this.showError(`Failed to load instance: ${error.message}`);
+            const msg = error.message || '';
+            // Suppress "not found", auth errors — just show empty state
+            const isExpected = msg.includes('404') || msg.includes('not found')
+                || msg.includes('401') || msg.includes('403')
+                || msg.includes('Not authenticated');
+            if (!isExpected) {
+                this.showError(`Failed to load instance: ${msg}`);
+            }
             this.showEmptyState();
         } finally {
             this.showLoading(false);
@@ -195,10 +205,13 @@ const Dashboard = {
             }
         }
 
-        // Update gateway endpoint
+        // Update gateway endpoint — show API Gateway URL or port-forward command
         const gatewayEl = document.getElementById('instance-gateway');
-        if (instance.gateway_endpoint) {
-            gatewayEl.textContent = instance.gateway_endpoint;
+        if (instance.api_gateway_url) {
+            gatewayEl.textContent = instance.api_gateway_url;
+            document.getElementById('copy-gateway-btn').disabled = false;
+        } else if (instance.user_id) {
+            gatewayEl.textContent = `kubectl port-forward -n openclaw-${instance.user_id} svc/openclaw-${instance.user_id} 18789:18789`;
             document.getElementById('copy-gateway-btn').disabled = false;
         } else {
             gatewayEl.textContent = 'Not available yet';
@@ -207,18 +220,25 @@ const Dashboard = {
 
         // Update connect button based on ready_for_connect flag
         const connectBtn = document.getElementById('connect-btn');
-        const readyForConnect = instance.ready_for_connect === true;
 
-        if (readyForConnect) {
-            connectBtn.disabled = false;
-            connectBtn.innerHTML = '<span>🔗</span> Connect to Gateway';
-        } else {
+        // Keep buttons disabled during delete
+        if (this.isDeleting) {
             connectBtn.disabled = true;
-            // Show specific waiting message
-            if (instance.status_message) {
-                connectBtn.innerHTML = `<span>⏳</span> ${instance.status_message}`;
+            connectBtn.innerHTML = '<span>⏳</span> Deleting...';
+        } else {
+            const readyForConnect = instance.ready_for_connect === true;
+
+            if (readyForConnect) {
+                connectBtn.disabled = false;
+                connectBtn.innerHTML = '<span>🔗</span> Connect to Gateway';
             } else {
-                connectBtn.innerHTML = '<span>⏳</span> Starting...';
+                connectBtn.disabled = true;
+                // Show specific waiting message
+                if (instance.status_message) {
+                    connectBtn.innerHTML = `<span>⏳</span> ${instance.status_message}`;
+                } else {
+                    connectBtn.innerHTML = '<span>⏳</span> Starting...';
+                }
             }
         }
 
@@ -298,17 +318,37 @@ const Dashboard = {
 
         this.hideError();
 
+        // Set deleting state — disable buttons and show "Deleting" badge
+        this.isDeleting = true;
+        const connectBtn = document.getElementById('connect-btn');
+        const deleteBtn = document.getElementById('delete-btn');
+        connectBtn.disabled = true;
+        connectBtn.innerHTML = '<span>⏳</span> Deleting...';
+        deleteBtn.disabled = true;
+
+        const statusEl = document.getElementById('instance-status');
+        statusEl.textContent = 'Deleting';
+        statusEl.className = 'status-badge status-warning';
+
         try {
             await API.deleteInstance(this.currentInstance.user_id);
             console.log('Instance deleted');
 
+            this.isDeleting = false;
             this.showSuccess('Instance deleted successfully!');
             this.currentInstance = null;
 
             setTimeout(() => this.loadInstance(), 2000);
         } catch (error) {
             console.error('Failed to delete instance:', error);
+            this.isDeleting = false;
+            connectBtn.disabled = false;
+            deleteBtn.disabled = false;
             this.showError(`Failed to delete instance: ${error.message}`);
+            // Restore original status
+            if (this.currentInstance) {
+                this.showInstance(this.currentInstance);
+            }
         }
     },
 
@@ -328,12 +368,13 @@ const Dashboard = {
 
     // Copy gateway endpoint to clipboard
     copyGatewayEndpoint() {
-        if (!this.currentInstance || !this.currentInstance.gateway_endpoint) {
+        const gatewayEl = document.getElementById('instance-gateway');
+        const displayedText = gatewayEl ? gatewayEl.textContent : '';
+        if (!displayedText || displayedText === 'Not available yet') {
             return;
         }
 
-        const endpoint = this.currentInstance.gateway_endpoint;
-        navigator.clipboard.writeText(endpoint).then(() => {
+        navigator.clipboard.writeText(displayedText).then(() => {
             const copyBtn = document.getElementById('copy-gateway-btn');
             const originalText = copyBtn.textContent;
             copyBtn.textContent = '✓ Copied!';
