@@ -48,6 +48,137 @@ function check_prerequisites() {
     log_info "前置条件检查通过 ✓"
 }
 
+function setup_efs_storage() {
+    log_info ""
+    log_info "=========================================="
+    log_info "Phase: 设置 EFS 存储"
+    log_info "=========================================="
+
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    EFS_NAME="openclaw-efs"
+    EFS_SG_NAME="openclaw-efs-sg"
+
+    # 获取 VPC 信息
+    CLUSTER_VPC=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION \
+      --query 'cluster.resourcesVpcConfig.vpcId' --output text)
+    VPC_CIDR=$(aws ec2 describe-vpcs --vpc-ids $CLUSTER_VPC --region $REGION \
+      --query 'Vpcs[0].CidrBlock' --output text)
+    SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$CLUSTER_VPC" \
+      --region $REGION --query 'Subnets[*].SubnetId' --output text)
+
+    log_info "VPC: $CLUSTER_VPC  CIDR: $VPC_CIDR"
+
+    # --- Security Group (幂等) ---
+    EFS_SG_ID=$(aws ec2 describe-security-groups \
+      --filters "Name=group-name,Values=$EFS_SG_NAME" "Name=vpc-id,Values=$CLUSTER_VPC" \
+      --region $REGION --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null)
+
+    if [ "$EFS_SG_ID" == "None" ] || [ -z "$EFS_SG_ID" ]; then
+        log_info "创建 EFS Security Group..."
+        EFS_SG_ID=$(aws ec2 create-security-group \
+          --group-name $EFS_SG_NAME \
+          --description "Allow NFS access for OpenClaw EFS" \
+          --vpc-id $CLUSTER_VPC \
+          --region $REGION \
+          --query 'GroupId' --output text)
+
+        aws ec2 authorize-security-group-ingress \
+          --group-id $EFS_SG_ID \
+          --protocol tcp \
+          --port 2049 \
+          --cidr $VPC_CIDR \
+          --region $REGION > /dev/null
+
+        aws ec2 create-tags --resources $EFS_SG_ID --region $REGION \
+          --tags Key=Name,Value=$EFS_SG_NAME Key=Project,Value=openclaw
+        log_info "✅ Security Group: $EFS_SG_ID"
+    else
+        log_info "Security Group 已存在: $EFS_SG_ID，跳过创建"
+    fi
+
+    # --- EFS FileSystem (幂等) ---
+    EFS_FILE_SYSTEM_ID=$(aws efs describe-file-systems \
+      --region $REGION \
+      --query "FileSystems[?Name=='$EFS_NAME' && LifeCycleState=='available'].FileSystemId | [0]" \
+      --output text 2>/dev/null)
+
+    if [ "$EFS_FILE_SYSTEM_ID" == "None" ] || [ -z "$EFS_FILE_SYSTEM_ID" ]; then
+        log_info "创建 EFS FileSystem..."
+        EFS_FILE_SYSTEM_ID=$(aws efs create-file-system \
+          --performance-mode generalPurpose \
+          --throughput-mode elastic \
+          --encrypted \
+          --tags Key=Name,Value=$EFS_NAME Key=Project,Value=openclaw \
+          --region $REGION \
+          --query 'FileSystemId' --output text)
+
+        log_info "等待 EFS 变为 available..."
+        for i in {1..30}; do
+            STATUS=$(aws efs describe-file-systems --file-system-id $EFS_FILE_SYSTEM_ID \
+              --region $REGION --query 'FileSystems[0].LifeCycleState' --output text)
+            if [ "$STATUS" == "available" ]; then
+                break
+            fi
+            echo -n "."
+            sleep 5
+        done
+        echo ""
+        log_info "✅ EFS FileSystem: $EFS_FILE_SYSTEM_ID"
+    else
+        log_info "EFS FileSystem 已存在: $EFS_FILE_SYSTEM_ID，跳过创建"
+    fi
+
+    # --- Mount Targets (幂等: 每个子网一个) ---
+    EXISTING_MTS=$(aws efs describe-mount-targets --file-system-id $EFS_FILE_SYSTEM_ID \
+      --region $REGION --query 'MountTargets[*].SubnetId' --output text 2>/dev/null)
+
+    for SUBNET_ID in $SUBNET_IDS; do
+        if echo "$EXISTING_MTS" | grep -q "$SUBNET_ID"; then
+            log_info "Mount Target 已存在于 $SUBNET_ID，跳过"
+            continue
+        fi
+        log_info "创建 Mount Target: $SUBNET_ID"
+        aws efs create-mount-target \
+          --file-system-id $EFS_FILE_SYSTEM_ID \
+          --subnet-id $SUBNET_ID \
+          --security-groups $EFS_SG_ID \
+          --region $REGION > /dev/null 2>&1 || log_warn "Mount Target 创建失败或已存在: $SUBNET_ID"
+    done
+
+    # 等待所有 Mount Target 变为 available
+    log_info "等待 Mount Targets 就绪..."
+    for i in {1..30}; do
+        NOT_AVAILABLE=$(aws efs describe-mount-targets --file-system-id $EFS_FILE_SYSTEM_ID \
+          --region $REGION --query "MountTargets[?LifeCycleState!='available'] | length(@)" --output text)
+        if [ "$NOT_AVAILABLE" == "0" ]; then
+            break
+        fi
+        echo -n "."
+        sleep 5
+    done
+    echo ""
+    log_info "✅ 所有 Mount Targets 已就绪"
+
+    # --- StorageClass (幂等) ---
+    SC_EXISTS=$(kubectl get storageclass efs-sc -o name 2>/dev/null || echo "")
+    if [ -z "$SC_EXISTS" ]; then
+        log_info "创建 EFS StorageClass..."
+        sed "s/\${EFS_FILE_SYSTEM_ID}/$EFS_FILE_SYSTEM_ID/g" \
+          "$SCRIPT_DIR/storage/efs-storageclass.yaml" | kubectl apply -f -
+        log_info "✅ StorageClass efs-sc 已创建"
+    else
+        log_info "StorageClass efs-sc 已存在，跳过创建"
+    fi
+
+    # 保存配置
+    cat >> $CONFIG_FILE << EOF
+EFS_FILE_SYSTEM_ID=$EFS_FILE_SYSTEM_ID
+EFS_SG_ID=$EFS_SG_ID
+EOF
+
+    log_info "✅ EFS 存储设置完成"
+}
+
 function deploy_alb_ingress() {
     log_info "=========================================="
     log_info "Phase 1: 部署 ALB Ingress"
@@ -448,6 +579,7 @@ function main() {
     log_info ""
 
     check_prerequisites
+    setup_efs_storage
     deploy_alb_ingress
     create_cognito
     create_vpc_link

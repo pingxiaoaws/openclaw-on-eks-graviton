@@ -38,7 +38,7 @@ class Config:
             }
         },
         'storage_size': os.environ.get('OPENCLAW_STORAGE_SIZE', '10Gi'),
-        'storage_class': os.environ.get('OPENCLAW_STORAGE_CLASS', 'gp3'),
+        'storage_class': os.environ.get('OPENCLAW_STORAGE_CLASS', 'efs-sc'),
         'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'),
         'aws_credentials_secret': os.environ.get('OPENCLAW_AWS_CREDENTIALS_SECRET', 'aws-credentials')
     }

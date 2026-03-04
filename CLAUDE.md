@@ -69,7 +69,7 @@ A production multi-tenant AI Agent platform running on Amazon EKS, featuring:
 │  │  Resources per user:                                            │ │
 │  │  - OpenClawInstance CRD (openclaw-<user_id>)                   │ │
 │  │  - StatefulSet (with runtimeClassName: kata-fc)                │ │
-│  │  - PVC (10Gi gp3)                                               │ │
+│  │  - PVC (10Gi efs-sc, EFS ReadWriteMany)                          │ │
 │  │  - Service (ClusterIP :18789)                                   │ │
 │  │  - Secret (aws-credentials for Bedrock)                        │ │
 │  │  - ResourceQuota, NetworkPolicy                                │ │
@@ -126,6 +126,9 @@ open-claw-operator-on-EKS-kata/
 │   ├── kubernetes/                   # Deployment manifests
 │   ├── Dockerfile                    # Multi-stage Python 3.12 image
 │   └── requirements.txt              # Includes python-jose[cryptography]
+│
+├── storage/                          # Storage configuration
+│   └── efs-storageclass.yaml         # EFS StorageClass (efs-sc, dynamic provisioning)
 │
 ├── openclaw-operator/                # Kubernetes Operator (Go)
 │   ├── api/v1alpha1/
@@ -330,7 +333,7 @@ OPENCLAW_DEFAULTS = {
         'limits': {'cpu': '2', 'memory': '4Gi'}
     },
     'storage_size': '10Gi',
-    'storage_class': 'gp3',
+    'storage_class': 'efs-sc',                           # EFS (ReadWriteMany, cross-AZ)
     'model': 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 }
 
@@ -345,6 +348,7 @@ COGNITO_CLIENT_ID = 'f5qd2udi8508dd132d72qn7uc'
 - `OPENCLAW_RUNTIME_CLASS` - Override runtime class
 - `OPENCLAW_NODE_SELECTOR` - JSON string for node selector
 - `OPENCLAW_CPU_REQUEST`, `OPENCLAW_MEMORY_REQUEST` - Resource requests
+- `OPENCLAW_STORAGE_CLASS` - Override storage class (default: `efs-sc`)
 - `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` - Cognito config
 
 ### OpenClaw Instance Template
@@ -387,7 +391,9 @@ spec:
     persistence:
       enabled: true
       size: 10Gi
-      storageClass: gp3
+      storageClass: efs-sc
+      accessModes:
+        - ReadWriteMany
 ```
 
 ## Security Architecture
@@ -644,9 +650,10 @@ Adjust in `eks-pod-service/app/config.py` → `RESOURCE_QUOTA`.
 
 ### Backup and Disaster Recovery
 
-**User data** (PVCs):
-- Use EBS snapshots: `kubectl get pvc -A` → identify PVs → create EBS snapshot
-- Or use Velero for automated backup
+**User data** (PVCs on EFS):
+- EFS data is automatically replicated across AZs
+- Use AWS Backup for EFS file system snapshots
+- Or use Velero for Kubernetes-native backup
 
 **Configuration**:
 - All Kubernetes manifests in git
@@ -662,5 +669,5 @@ Adjust in `eks-pod-service/app/config.py` → `RESOURCE_QUOTA`.
 
 ---
 
-**Last updated**: 2026-03-02
-**Status**: Production (JWT auth secured)
+**Last updated**: 2026-03-04
+**Status**: Production (JWT auth secured, EFS storage)

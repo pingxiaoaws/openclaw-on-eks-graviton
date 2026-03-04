@@ -62,6 +62,14 @@ const Dashboard = {
                 this.copyGatewayEndpoint();
             });
         }
+
+        // Runtime selector toggle
+        document.querySelectorAll('.runtime-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.runtime-option').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
     },
 
     // Handle logout
@@ -124,6 +132,28 @@ const Dashboard = {
         statusEl.textContent = statusMessage;
         statusEl.className = `status-badge status-${status.toLowerCase()}`;
 
+        // Update runtime badge
+        const runtimeEl = document.getElementById('instance-runtime');
+        if (runtimeEl) {
+            const runtimeClass = instance.runtime_class || null;
+            if (runtimeClass && runtimeClass.startsWith('kata')) {
+                runtimeEl.innerHTML = '<span class="runtime-badge runtime-kata">🛡️ Secure VM (' + runtimeClass + ')</span>';
+            } else {
+                runtimeEl.innerHTML = '<span class="runtime-badge runtime-runc">📦 Standard (runc)</span>';
+            }
+        }
+
+        // Update storage badge
+        const storageEl = document.getElementById('instance-storage');
+        if (storageEl) {
+            const storageClass = instance.storage_class || 'efs-sc';
+            if (storageClass === 'gp3') {
+                storageEl.innerHTML = '<span class="runtime-badge runtime-kata">💾 EBS (gp3)</span>';
+            } else {
+                storageEl.innerHTML = '<span class="runtime-badge runtime-runc">📂 EFS (elastic)</span>';
+            }
+        }
+
         // Update gateway endpoint
         const gatewayEl = document.getElementById('instance-gateway');
         if (instance.gateway_endpoint) {
@@ -162,7 +192,12 @@ const Dashboard = {
             return;
         }
 
-        if (!confirm('Create a new OpenClaw instance? This may take a few minutes.')) {
+        // Get selected runtime
+        const selectedRuntime = document.querySelector('.runtime-option.active')?.dataset.runtime || 'runc';
+        const runtimeLabel = selectedRuntime === 'kata-qemu' ? 'Secure VM (Kata)' : 'Standard';
+        const storageLabel = selectedRuntime === 'kata-qemu' ? 'EBS (gp3)' : 'EFS (elastic)';
+
+        if (!confirm(`Create a new OpenClaw instance?\n\nRuntime: ${runtimeLabel}\nStorage: ${storageLabel}\n\nThis may take a few minutes.`)) {
             return;
         }
 
@@ -172,7 +207,7 @@ const Dashboard = {
         this.hideError();
 
         try {
-            const result = await API.createInstance();
+            const result = await API.createInstance(selectedRuntime);
             console.log('Instance created:', result);
 
             this.showSuccess('Instance creation started! Refreshing...');

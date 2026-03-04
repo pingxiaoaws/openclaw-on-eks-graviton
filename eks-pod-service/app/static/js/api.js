@@ -70,10 +70,23 @@ const API = {
     },
 
     // Create new instance
-    async createInstance() {
+    async createInstance(runtimeMode = 'runc') {
+        const config = {};
+        if (runtimeMode === 'kata-qemu') {
+            config.runtime_class = 'kata-qemu';
+            config.node_selector = { 'workload-type': 'kata' };
+            config.tolerations = [{
+                key: 'kata-dedicated',
+                operator: 'Exists',
+                effect: 'NoSchedule'
+            }];
+            config.storage_class = 'gp3';
+        } else {
+            config.storage_class = 'efs-sc';
+        }
         return this.request('/provision', {
             method: 'POST',
-            body: JSON.stringify({})
+            body: JSON.stringify({ config })
         });
     },
 

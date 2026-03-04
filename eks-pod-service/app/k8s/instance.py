@@ -68,7 +68,8 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                 "persistence": {
                     "enabled": True,
                     "size": config['storage_size'],
-                    "storageClass": config['storage_class']
+                    "storageClass": config['storage_class'],
+                    "accessModes": ["ReadWriteOnce"] if config['storage_class'] == 'gp3' else ["ReadWriteMany"]
                 }
             },
             "networking": {

@@ -456,6 +456,99 @@
             flex: 1;
         }
 
+        /* Runtime Selector */
+        .runtime-selector {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .runtime-selector > label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .runtime-options {
+            display: flex;
+            background: rgba(10, 14, 26, 0.8);
+            border: 1px solid rgba(139, 147, 167, 0.3);
+            border-radius: 10px;
+            padding: 3px;
+            gap: 2px;
+        }
+
+        .runtime-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            white-space: nowrap;
+        }
+
+        .runtime-option:hover:not(.active) {
+            color: var(--text-primary);
+            background: rgba(139, 147, 167, 0.1);
+        }
+
+        .runtime-option.active[data-runtime="runc"] {
+            background: rgba(0, 212, 255, 0.2);
+            color: var(--cyber-cyan);
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+        }
+
+        .runtime-option.active[data-runtime="kata-qemu"] {
+            background: rgba(255, 107, 53, 0.2);
+            color: var(--plasma-orange);
+            border: 1px solid rgba(255, 107, 53, 0.4);
+            box-shadow: 0 0 12px rgba(255, 107, 53, 0.15);
+        }
+
+        .runtime-icon {
+            font-size: 1rem;
+        }
+
+        .runtime-label {
+            font-size: 0.85rem;
+        }
+
+        /* Runtime Badge (in instance details) */
+        .runtime-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .runtime-badge.runtime-runc {
+            background: rgba(0, 212, 255, 0.15);
+            color: var(--cyber-cyan);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+
+        .runtime-badge.runtime-kata {
+            background: rgba(255, 107, 53, 0.15);
+            color: var(--plasma-orange);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             header {
@@ -503,6 +596,20 @@
 
     <main>
         <div class="actions-bar">
+            <div class="runtime-selector" id="runtime-selector">
+                <label>Runtime</label>
+                <div class="runtime-options">
+                    <button class="runtime-option active" data-runtime="runc">
+                        <span class="runtime-icon">📦</span>
+                        <span class="runtime-label">Standard</span>
+                    </button>
+                    <button class="runtime-option" data-runtime="kata-qemu">
+                        <span class="runtime-icon">🛡️</span>
+                        <span class="runtime-label">Secure VM</span>
+                    </button>
+                </div>
+            </div>
+
             <button id="create-instance-btn" class="btn btn-primary">
                 <span>➕</span> Create OpenClaw Instance
             </button>
@@ -553,6 +660,20 @@
                         <div class="detail-group">
                             <label>Created At</label>
                             <div class="detail-value" id="instance-created">-</div>
+                        </div>
+
+                        <div class="detail-group">
+                            <label>Runtime</label>
+                            <div class="detail-value" id="instance-runtime">
+                                <span class="runtime-badge runtime-runc">📦 Standard (runc)</span>
+                            </div>
+                        </div>
+
+                        <div class="detail-group">
+                            <label>Storage</label>
+                            <div class="detail-value" id="instance-storage">
+                                <span class="runtime-badge runtime-runc">📂 EFS (elastic)</span>
+                            </div>
                         </div>
 
                         <div class="detail-group full-width">
