@@ -70,7 +70,7 @@ const Auth = {
                             idToken: idToken,
                             accessToken: accessToken,
                             refreshToken: refreshToken,
-                            expiresAt: Date.now() + (result.getIdToken().getExpiration() * 1000)
+                            expiresAt: result.getIdToken().getExpiration() * 1000
                         };
 
                         // Save to localStorage
