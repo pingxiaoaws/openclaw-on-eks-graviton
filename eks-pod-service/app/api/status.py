@@ -163,12 +163,21 @@ def status(user_info, user_id):
         else:
             status_message = "Ready"
 
-        # Build API Gateway URL for external access (with gateway token)
+        # Build API Gateway URL and CloudFront URLs for external access (with gateway token)
         from app.config import Config
         api_gateway_url = None
+        cloudfront_url = None
+        cloudfront_http_url = None
+
         if Config.INGRESS_ENABLED and ready_for_connect and gateway_token:
-            # Include token as query parameter for OpenClaw gateway authentication
+            # Legacy API Gateway URL (keep for backward compatibility)
             api_gateway_url = f"{Config.API_GATEWAY_ENDPOINT}/{Config.API_GATEWAY_STAGE}/instance/{user_id}/?token={gateway_token}"
+
+        if Config.USE_PUBLIC_ALB and ready_for_connect and gateway_token:
+            # CloudFront WebSocket URL (primary for new frontend)
+            cloudfront_url = f"wss://{Config.CLOUDFRONT_DOMAIN}/instance/{user_id}?token={gateway_token}"
+            # CloudFront HTTP URL (for display in UI)
+            cloudfront_http_url = f"https://{Config.CLOUDFRONT_DOMAIN}/instance/{user_id}/?token={gateway_token}"
 
         response = {
             "user_id": user_id,
@@ -178,7 +187,9 @@ def status(user_info, user_id):
             "ready_for_connect": ready_for_connect,  # Boolean: true when safe to connect
             "status_message": status_message,  # Human-readable status for UI
             "gateway_endpoint": gateway_endpoint,  # Internal cluster endpoint
-            "api_gateway_url": api_gateway_url,  # External API Gateway URL (with token)
+            "api_gateway_url": api_gateway_url,  # External API Gateway URL (with token) - legacy
+            "cloudfront_url": cloudfront_url,  # CloudFront WebSocket URL (wss://) - primary
+            "cloudfront_http_url": cloudfront_http_url,  # CloudFront HTTP URL (https://) - for display
             "gateway_token": gateway_token if ready_for_connect else None,  # Only expose token when ready
             "created_at": created_at,
             "llm_provider": llm_provider,  # 'bedrock' or 'siliconflow'

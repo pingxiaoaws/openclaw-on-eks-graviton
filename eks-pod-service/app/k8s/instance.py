@@ -35,6 +35,12 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
     if provider == 'siliconflow':
         sf = Config.SILICONFLOW_DEFAULTS
         config_raw = {
+            "gateway": {
+                "controlUi": {
+                    "allowedOrigins": Config.GATEWAY_CONFIG["allowedOrigins"]
+                },
+                "trustedProxies": Config.GATEWAY_CONFIG["trustedProxies"]
+            },
             "models": {
                 "providers": {
                     "siliconflow": {
@@ -62,6 +68,12 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         }
     else:  # bedrock (default)
         config_raw = {
+            "gateway": {
+                "controlUi": {
+                    "allowedOrigins": Config.GATEWAY_CONFIG["allowedOrigins"]
+                },
+                "trustedProxies": Config.GATEWAY_CONFIG["trustedProxies"]
+            },
             "agents": {
                 "defaults": {
                     "model": {
@@ -183,9 +195,12 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
 
 def _build_ingress_config(user_id):
     """
-    Build Ingress configuration for Internal ALB accessed via API Gateway
+    Build Ingress configuration for Public ALB behind CloudFront (NEW) or Internal ALB via API Gateway (OLD)
 
-    Architecture:
+    Architecture (Public ALB + CloudFront - RECOMMENDED):
+      User → CloudFront (HTTPS) → Internet-Facing ALB → OpenClaw
+
+    Architecture (Internal ALB + API Gateway - OLD):
       User → API Gateway (JWT auth) → VPC Link → Internal ALB → OpenClaw
 
     Args:
@@ -194,45 +209,72 @@ def _build_ingress_config(user_id):
     Returns:
         Dict: Ingress configuration
     """
-    config = {
-        "enabled": True,
-        "className": Config.INGRESS_CLASS,
-        "annotations": {
-            # ALB Ingress Group - share single internal ALB across all instances
-            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/group.name": Config.INGRESS_GROUP_NAME,
-
-            # Internal ALB - not exposed to internet
-            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/scheme": Config.INGRESS_SCHEME,
-
-            # IP target mode for better performance
-            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/target-type": Config.INGRESS_TARGET_TYPE,
-
-            # Health check
-            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-path": f"/instance/{user_id}/",
-            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
-            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/success-codes": "200,404",  # 404 ok if gateway requires auth
-
-            # Target Group Attributes - WebSocket optimization
-            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/target-group-attributes": (
-                "stickiness.enabled=true,"
-                "stickiness.type=lb_cookie,"
-                "stickiness.lb_cookie.duration_seconds=3600,"
-                "deregistration_delay.timeout_seconds=60,"
-                "load_balancing.algorithm.type=least_outstanding_requests"
-            ),
-        },
-        # Path-based routing only (no host - accessed via API Gateway)
-        "hosts": [{
-            "host": "",  # Empty host for path-based routing
-            "paths": [{
-                "path": f"/instance/{user_id}",
-                "pathType": "Prefix"
+    if Config.USE_PUBLIC_ALB:
+        # Public ALB + CloudFront 模式
+        config = {
+            "enabled": True,
+            "className": Config.INGRESS_CLASS,
+            "annotations": {
+                # Merge Public ALB annotations
+                **Config.PUBLIC_ALB_INGRESS_ANNOTATIONS,
+                # Override healthcheck path
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-path": f"/instance/{user_id}/",
+            },
+            # Host-based routing with CloudFront domain
+            "hosts": [{
+                "host": Config.CLOUDFRONT_DOMAIN,
+                "paths": [{
+                    "path": f"/instance/{user_id}",
+                    "pathType": "Prefix"
+                }]
             }]
-        }]
-    }
+        }
 
-    logger.info(f"✅ Internal ALB Ingress configured for user {user_id} - path: /instance/{user_id}")
-    logger.info(f"   Access via API Gateway: {Config.API_GATEWAY_ENDPOINT}/{Config.API_GATEWAY_STAGE}/instance/{user_id}/")
+        logger.info(f"✅ Public ALB Ingress configured for user {user_id} - path: /instance/{user_id}")
+        logger.info(f"   Access via CloudFront: https://{Config.CLOUDFRONT_DOMAIN}/instance/{user_id}/")
+        logger.info(f"   Direct ALB access: http://{Config.PUBLIC_ALB_DNS}/instance/{user_id}/")
+
+    else:
+        # Internal ALB + API Gateway 模式（原有逻辑）
+        config = {
+            "enabled": True,
+            "className": Config.INGRESS_CLASS,
+            "annotations": {
+                # ALB Ingress Group - share single internal ALB across all instances
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/group.name": Config.INGRESS_GROUP_NAME,
+
+                # Internal ALB - not exposed to internet
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/scheme": Config.INGRESS_SCHEME,
+
+                # IP target mode for better performance
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/target-type": Config.INGRESS_TARGET_TYPE,
+
+                # Health check
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-path": f"/instance/{user_id}/",
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/success-codes": "200,404",  # 404 ok if gateway requires auth
+
+                # Target Group Attributes - WebSocket optimization
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/target-group-attributes": (
+                    "stickiness.enabled=true,"
+                    "stickiness.type=lb_cookie,"
+                    "stickiness.lb_cookie.duration_seconds=3600,"
+                    "deregistration_delay.timeout_seconds=60,"
+                    "load_balancing.algorithm.type=least_outstanding_requests"
+                ),
+            },
+            # Path-based routing only (no host - accessed via API Gateway)
+            "hosts": [{
+                "host": "",  # Empty host for path-based routing
+                "paths": [{
+                    "path": f"/instance/{user_id}",
+                    "pathType": "Prefix"
+                }]
+            }]
+        }
+
+        logger.info(f"✅ Internal ALB Ingress configured for user {user_id} - path: /instance/{user_id}")
+        logger.info(f"   Access via API Gateway: {Config.API_GATEWAY_ENDPOINT}/{Config.API_GATEWAY_STAGE}/instance/{user_id}/")
 
     return config
 

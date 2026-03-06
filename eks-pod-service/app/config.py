@@ -90,3 +90,48 @@ class Config:
     # API Gateway 配置（用于构建外部访问 URL）
     API_GATEWAY_ENDPOINT = os.environ.get('API_GATEWAY_ENDPOINT', 'https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com')
     API_GATEWAY_STAGE = os.environ.get('API_GATEWAY_STAGE', 'prod')
+
+    # CloudFront + Public ALB 配置（最终生产方案）
+    CLOUDFRONT_DOMAIN = os.environ.get('CLOUDFRONT_DOMAIN', 'd3ik6njnl847zd.cloudfront.net')
+    CLOUDFRONT_DISTRIBUTION_ID = os.environ.get('CLOUDFRONT_DISTRIBUTION_ID', 'E30KMUI0GGXXLY')
+    PUBLIC_ALB_DNS = os.environ.get('PUBLIC_ALB_DNS', 'k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com')
+    PUBLIC_ALB_GROUP_NAME = os.environ.get('PUBLIC_ALB_GROUP_NAME', 'openclaw-shared-instances')
+
+    # Public ALB 子网配置（4 AZs: us-west-2a/b/c/d）
+    PUBLIC_ALB_SUBNETS = os.environ.get(
+        'PUBLIC_ALB_SUBNETS',
+        'subnet-08a07253e176e1909,subnet-05abc2d68c50fd8ae,subnet-0ddf028eca68fffa2,subnet-0ab9282c748d87511'
+    )
+
+    # Gateway 配置（allowedOrigins + trustedProxies）
+    GATEWAY_CONFIG = {
+        "allowedOrigins": [
+            f"https://{os.environ.get('CLOUDFRONT_DOMAIN', 'd3ik6njnl847zd.cloudfront.net')}",
+            f"http://{os.environ.get('PUBLIC_ALB_DNS', 'k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com')}",
+            f"https://{os.environ.get('PUBLIC_ALB_DNS', 'k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com')}"
+        ],
+        "trustedProxies": [os.environ.get('GATEWAY_TRUSTED_PROXIES', '0.0.0.0/0')]  # 生产环境改为 VPC CIDR 或 CloudFront IP ranges
+    }
+
+    # Public ALB Ingress annotations（共享 ALB 模式）
+    PUBLIC_ALB_INGRESS_ANNOTATIONS = {
+        "alb.ingress.kubernetes.io/scheme": "internet-facing",
+        "alb.ingress.kubernetes.io/target-type": "ip",
+        "alb.ingress.kubernetes.io/group.name": os.environ.get('PUBLIC_ALB_GROUP_NAME', 'openclaw-shared-instances'),
+        "alb.ingress.kubernetes.io/subnets": os.environ.get(
+            'PUBLIC_ALB_SUBNETS',
+            'subnet-08a07253e176e1909,subnet-05abc2d68c50fd8ae,subnet-0ddf028eca68fffa2,subnet-0ab9282c748d87511'
+        ),
+        "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
+        "alb.ingress.kubernetes.io/success-codes": "200,404",
+        "alb.ingress.kubernetes.io/target-group-attributes": (
+            "stickiness.enabled=true,"
+            "stickiness.type=lb_cookie,"
+            "stickiness.lb_cookie.duration_seconds=3600,"
+            "deregistration_delay.timeout_seconds=60,"
+            "load_balancing.algorithm.type=least_outstanding_requests"
+        )
+    }
+
+    # 使用 Public ALB 模式（覆盖内部 ALB 配置）
+    USE_PUBLIC_ALB = os.environ.get('USE_PUBLIC_ALB', 'true').lower() == 'true'

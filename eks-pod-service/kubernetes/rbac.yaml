@@ -40,10 +40,15 @@ rules:
     resources: ["openclawinstances"]
     verbs: ["create", "get", "list", "watch", "delete"]
 
-  # Pod status queries (read-only)
+  # Pod status queries (read-only) + exec (for device pairing)
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+
+  # Pod exec (for device pairing API)
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
 
   # Endpoints queries (for readiness checking)
   - apiGroups: [""]

@@ -638,6 +638,111 @@
             background: rgba(139, 147, 167, 0.15);
         }
 
+        /* WebSocket Controls */
+        .ws-controls {
+            margin-top: 1.5rem;
+            padding: 1.5rem;
+            background: rgba(0, 78, 137, 0.1);
+            border: 1px solid rgba(0, 78, 137, 0.3);
+            border-radius: 16px;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .ws-status-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .ws-status-panel .status-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .ws-status-panel .status-row label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .ws-status {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .ws-status.status-connected {
+            background: rgba(0, 255, 157, 0.2);
+            color: var(--success);
+            border: 1px solid var(--success);
+            box-shadow: 0 0 15px rgba(0, 255, 157, 0.3);
+        }
+
+        .ws-status.status-disconnected {
+            background: rgba(255, 87, 87, 0.2);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+
+        .ws-status.status-error {
+            background: rgba(255, 217, 61, 0.2);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .ws-status-panel .button-group {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        /* Device Pairing Notification */
+        .pairing-notification {
+            margin-top: 1rem;
+            padding: 1.25rem;
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.5);
+            border-radius: 12px;
+            animation: slideDown 0.4s ease;
+        }
+
+        .pairing-notification .notification-content {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .pairing-notification .icon {
+            font-size: 2rem;
+            flex-shrink: 0;
+        }
+
+        .pairing-notification .message {
+            flex: 1;
+        }
+
+        .pairing-notification .message strong {
+            display: block;
+            font-size: 1rem;
+            margin-bottom: 0.25rem;
+            color: var(--text-primary);
+        }
+
+        .pairing-notification .message p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .pairing-notification .btn {
+            flex-shrink: 0;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             header {
@@ -802,6 +907,35 @@
                                 <code id="instance-gateway">-</code>
                                 <button class="btn btn-copy" id="copy-gateway-btn" title="Copy to clipboard">
                                     📋 Copy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- WebSocket Controls Panel -->
+                    <div id="ws-controls" class="ws-controls hidden">
+                        <div class="ws-status-panel">
+                            <div class="status-row">
+                                <label>WebSocket Status:</label>
+                                <span id="ws-status" class="ws-status status-disconnected">🔴 Disconnected</span>
+                            </div>
+                            <div class="button-group">
+                                <button class="btn btn-secondary" onclick="Dashboard.handleDisconnectInstance()">
+                                    🔌 Disconnect
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Device Pairing Notification -->
+                        <div id="pairing-notification" class="pairing-notification hidden">
+                            <div class="notification-content">
+                                <span class="icon">🔐</span>
+                                <div class="message">
+                                    <strong>Device Pairing Required</strong>
+                                    <p>A new device is requesting access to your gateway</p>
+                                </div>
+                                <button class="btn btn-primary" onclick="Dashboard.handleApproveDevice()">
+                                    ✓ Approve Device
                                 </button>
                             </div>
                         </div>

@@ -1,8 +1,127 @@
+// WebSocket Manager for OpenClaw Gateway connections
+class WebSocketManager {
+    constructor() {
+        this.ws = null;
+        this.isConnected = false;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 3;
+        this.messageHandlers = [];
+        this.reconnectUrl = null;
+    }
+
+    connect(url) {
+        if (this.ws) {
+            this.disconnect();
+        }
+
+        console.log('🔌 Connecting to WebSocket:', url);
+        this.reconnectUrl = url;
+        this.ws = new WebSocket(url);
+
+        this.ws.onopen = () => {
+            console.log('✅ WebSocket connected');
+            this.isConnected = true;
+            this.reconnectAttempts = 0;
+            this.updateStatus('connected');
+        };
+
+        this.ws.onmessage = (event) => {
+            console.log('📨 WebSocket message:', event.data);
+            try {
+                const data = JSON.parse(event.data);
+                this.handleMessage(data);
+            } catch (e) {
+                console.error('❌ Failed to parse WebSocket message:', e);
+            }
+        };
+
+        this.ws.onerror = (error) => {
+            console.error('❌ WebSocket error:', error);
+            this.updateStatus('error');
+        };
+
+        this.ws.onclose = (event) => {
+            console.log('🔌 WebSocket closed:', event.code, event.reason);
+            this.isConnected = false;
+            this.updateStatus('disconnected');
+
+            // Auto-reconnect with exponential backoff
+            if (this.reconnectAttempts < this.maxReconnectAttempts && this.reconnectUrl) {
+                this.reconnectAttempts++;
+                const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 5000);
+                console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})...`);
+                setTimeout(() => {
+                    if (this.reconnectUrl) {
+                        this.connect(this.reconnectUrl);
+                    }
+                }, delay);
+            }
+        };
+    }
+
+    disconnect() {
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
+        this.isConnected = false;
+        this.reconnectUrl = null;
+        this.reconnectAttempts = 0;
+        this.updateStatus('disconnected');
+    }
+
+    send(data) {
+        if (this.ws && this.isConnected) {
+            this.ws.send(JSON.stringify(data));
+        } else {
+            console.error('❌ WebSocket not connected');
+        }
+    }
+
+    handleMessage(data) {
+        // Check for device pairing requests
+        if (data.type === 'pairing_required' || data.type === 'device_pairing_required') {
+            this.showPairingNotification(data);
+        }
+
+        // Call all registered message handlers
+        this.messageHandlers.forEach(handler => handler(data));
+    }
+
+    showPairingNotification(data) {
+        const container = document.getElementById('pairing-notification');
+        if (container) {
+            container.classList.remove('hidden');
+            container.dataset.requestId = data.requestId || data.request_id || '';
+        }
+    }
+
+    updateStatus(status) {
+        const statusEl = document.getElementById('ws-status');
+        if (!statusEl) return;
+
+        const statusConfig = {
+            'connected': { text: '🟢 Connected', class: 'status-connected' },
+            'disconnected': { text: '🔴 Disconnected', class: 'status-disconnected' },
+            'error': { text: '🟡 Error', class: 'status-error' }
+        };
+
+        const config = statusConfig[status] || statusConfig.disconnected;
+        statusEl.textContent = config.text;
+        statusEl.className = `ws-status ${config.class}`;
+    }
+
+    onMessage(handler) {
+        this.messageHandlers.push(handler);
+    }
+}
+
 // Dashboard page logic
 const Dashboard = {
     currentInstance: null,
     refreshTimer: null,
     isDeleting: false,
+    wsManager: new WebSocketManager(),
 
     // Initialize dashboard
     init() {
@@ -205,12 +324,21 @@ const Dashboard = {
             }
         }
 
-        // Update gateway endpoint — show API Gateway URL or port-forward command
+        // Update gateway endpoint — prioritize CloudFront HTTP URL
         const gatewayEl = document.getElementById('instance-gateway');
-        if (instance.api_gateway_url) {
+
+        // Priority 1: CloudFront HTTP URL (new production URL)
+        if (instance.cloudfront_http_url) {
+            gatewayEl.textContent = instance.cloudfront_http_url;
+            document.getElementById('copy-gateway-btn').disabled = false;
+        }
+        // Priority 2: API Gateway URL (legacy fallback)
+        else if (instance.api_gateway_url) {
             gatewayEl.textContent = instance.api_gateway_url;
             document.getElementById('copy-gateway-btn').disabled = false;
-        } else if (instance.user_id) {
+        }
+        // Priority 3: kubectl port-forward command
+        else if (instance.user_id) {
             gatewayEl.textContent = `kubectl port-forward -n openclaw-${instance.user_id} svc/openclaw-${instance.user_id} 18789:18789`;
             document.getElementById('copy-gateway-btn').disabled = false;
         } else {
@@ -354,15 +482,126 @@ const Dashboard = {
 
     // Handle connect to instance
     async handleConnectInstance() {
-        if (!this.currentInstance || !this.currentInstance.gateway_endpoint) {
+        if (!this.currentInstance) {
+            this.showError('No instance selected');
+            return;
+        }
+
+        // Prioritize CloudFront WebSocket URL
+        const wsUrl = this.currentInstance.cloudfront_url;
+
+        if (!wsUrl) {
+            this.showError('CloudFront WebSocket URL not available yet. Please wait for instance to be ready.');
             return;
         }
 
         try {
-            await API.openInstance(this.currentInstance);
+            // Establish WebSocket connection
+            this.wsManager.connect(wsUrl);
+            this.showSuccess('Connecting to gateway...');
+
+            // Show WebSocket controls panel
+            const wsControls = document.getElementById('ws-controls');
+            if (wsControls) {
+                wsControls.classList.remove('hidden');
+            }
         } catch (error) {
             console.error('Failed to connect:', error);
             this.showError(`Failed to connect: ${error.message}`);
+        }
+    },
+
+    // Handle disconnect from instance
+    handleDisconnectInstance() {
+        this.wsManager.disconnect();
+
+        // Hide WebSocket controls panel
+        const wsControls = document.getElementById('ws-controls');
+        if (wsControls) {
+            wsControls.classList.add('hidden');
+        }
+
+        // Hide pairing notification if visible
+        const pairingNotif = document.getElementById('pairing-notification');
+        if (pairingNotif) {
+            pairingNotif.classList.add('hidden');
+        }
+
+        this.showSuccess('Disconnected from gateway');
+    },
+
+    // Handle approve device (triggered by WebSocket pairing notification)
+    async handleApproveDevice() {
+        const notification = document.getElementById('pairing-notification');
+        const requestId = notification?.dataset.requestId;
+
+        if (!requestId || !this.currentInstance) {
+            this.showError('No pending device pairing request');
+            return;
+        }
+
+        try {
+            this.hideError();
+            const result = await API.approveDevice(
+                this.currentInstance.user_id,
+                requestId
+            );
+
+            if (result.success) {
+                this.showSuccess('✅ Device approved successfully!');
+                notification.classList.add('hidden');
+
+                // Reconnect WebSocket after approval
+                setTimeout(() => {
+                    if (this.currentInstance && this.currentInstance.cloudfront_url) {
+                        console.log('🔄 Reconnecting WebSocket after device approval...');
+                        this.wsManager.connect(this.currentInstance.cloudfront_url);
+                    }
+                }, 1000);
+            } else {
+                this.showError('Failed to approve device');
+            }
+        } catch (error) {
+            console.error('Failed to approve device:', error);
+            this.showError(`Failed to approve device: ${error.message}`);
+        }
+    },
+
+    // Handle approve device manually (check for pending requests)
+    async handleApproveDeviceManual() {
+        if (!this.currentInstance) {
+            this.showError('No instance selected');
+            return;
+        }
+
+        try {
+            this.hideError();
+
+            // Get device list
+            const devices = await API.listDevices(this.currentInstance.user_id);
+
+            // Simple approach: try to approve latest pending request
+            // Note: This assumes the API will handle finding pending requests
+            const result = await API.approveDevice(
+                this.currentInstance.user_id,
+                'latest'  // Special value to approve most recent pending request
+            );
+
+            if (result.success) {
+                this.showSuccess('✅ Device approved!');
+
+                // Reconnect WebSocket
+                setTimeout(() => {
+                    if (this.currentInstance && this.currentInstance.cloudfront_url) {
+                        this.wsManager.connect(this.currentInstance.cloudfront_url);
+                    }
+                }, 1000);
+            } else {
+                this.showError('No pending device requests found');
+            }
+        } catch (error) {
+            console.error('Failed to approve device:', error);
+            this.showError(`Failed to approve device: ${error.message}`);
         }
     },
 

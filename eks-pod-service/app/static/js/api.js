@@ -159,5 +159,21 @@ const API = {
             endpoint: instance.gateway_endpoint,
             portForwardCommand: portForwardCmd
         };
+    },
+
+    // Approve device pairing request
+    async approveDevice(userId, requestId) {
+        return this.request('/api/devices/approve', {
+            method: 'POST',
+            body: JSON.stringify({
+                user_id: userId,
+                request_id: requestId
+            })
+        });
+    },
+
+    // List devices for user
+    async listDevices(userId) {
+        return this.request(`/api/devices/list?user_id=${userId || ''}`);
     }
 };
