@@ -82,22 +82,28 @@ def approve_device(user_info):
                 }), 500
 
             # Parse output to find pending requests
+            # Look for UUID patterns in all lines (not just lines with "pending")
             pending_requests = []
             import re
-            for line in list_stdout.split('\n'):
-                if 'pending' in line.lower():
-                    # Try UUID format first
-                    match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', line, re.IGNORECASE)
+
+            # Check if there are any pending requests in the output
+            has_pending = 'pending' in list_stdout.lower()
+
+            if has_pending:
+                # Extract all UUIDs from the output (they appear in table rows)
+                for line in list_stdout.split('\n'):
+                    # Look for UUID pattern at the start of a line (first column in table)
+                    match = re.search(r'│\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\s*│', line, re.IGNORECASE)
                     if match:
-                        pending_requests.append(match.group(1))
-                    else:
-                        # Try other ID formats
-                        match = re.search(r'(?:Request ID:|ID:)\s*([a-zA-Z0-9-]+)', line, re.IGNORECASE)
-                        if match:
-                            pending_requests.append(match.group(1))
+                        uuid = match.group(1)
+                        # Avoid duplicates
+                        if uuid not in pending_requests:
+                            pending_requests.append(uuid)
+                            logger.info(f"Found pending request: {uuid}")
 
             if not pending_requests:
                 logger.info(f"ℹ️ No pending device requests for user {user_id}")
+                logger.debug(f"List output: {list_stdout[:500]}")  # Log first 500 chars for debugging
                 return jsonify({
                     "success": False,
                     "message": "No pending device pairing requests found",
