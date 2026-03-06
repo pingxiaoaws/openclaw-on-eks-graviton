@@ -94,10 +94,9 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
     rbac_config = {
         "createServiceAccount": True,
     }
-    if role_arn:
-        rbac_config["serviceAccountAnnotations"] = {
-            "eks.amazonaws.com/role-arn": role_arn
-        }
+    # Note: Do NOT add eks.amazonaws.com/role-arn annotation when using Pod Identity
+    # Pod Identity Association handles the ServiceAccount → IAM Role mapping
+    # Adding IRSA annotation causes "AssumeRoleWithWebIdentity" error
 
     # Build OpenClawInstance CRD
     instance_body = {
