@@ -41,20 +41,34 @@ def exec_in_pod(namespace, pod_name, container_name, command):
             _preload_content=False
         )
 
-        # Read output
+        # Read output with increased timeout to handle table output
         stdout = ""
         stderr = ""
 
+        import time
+        max_wait = 10  # Maximum 10 seconds to wait for output
+        start_time = time.time()
+
         while resp.is_open():
-            resp.update(timeout=1)
+            resp.update(timeout=3)  # Increased from 1 to 3 seconds
             if resp.peek_stdout():
                 stdout += resp.read_stdout()
             if resp.peek_stderr():
                 stderr += resp.read_stderr()
 
+            # Break if we've waited too long
+            if time.time() - start_time > max_wait:
+                break
+
+        # Read any remaining output after stream closes
+        if resp.peek_stdout():
+            stdout += resp.read_stdout()
+        if resp.peek_stderr():
+            stderr += resp.read_stderr()
+
         resp.close()
 
-        logger.info(f"Command executed successfully. stdout: {stdout[:200]}, stderr: {stderr[:200]}")
+        logger.info(f"Command executed successfully. stdout length: {len(stdout)}, stderr length: {len(stderr)}")
 
         return stdout, stderr
 
