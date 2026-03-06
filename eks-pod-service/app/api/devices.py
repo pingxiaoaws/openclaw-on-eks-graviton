@@ -112,11 +112,50 @@ def approve_device(user_info):
                     "user_id": user_id
                 }), 200  # HTTP 200 with success=false
 
-            # Use the first pending request
-            request_id = pending_requests[0]
-            logger.info(f"✅ Auto-selected pending request: {request_id}")
+            # Try approving pending requests one by one until one succeeds
+            logger.info(f"✅ Found {len(pending_requests)} pending request(s)")
 
-        # 6. Execute device approval command
+            last_error = None
+            for request_id in pending_requests:
+                logger.info(f"🔄 Attempting to approve request: {request_id}")
+
+                # 6. Execute device approval command
+                command = ['openclaw', 'devices', 'approve', request_id]
+
+                try:
+                    stdout, stderr = exec_in_pod(namespace, pod_name, container_name, command)
+
+                    # 7. Check if command succeeded
+                    if stderr and 'error' in stderr.lower():
+                        logger.warning(f"⚠️ Request {request_id} failed (may be expired): {stderr.strip()}")
+                        last_error = stderr.strip()
+                        continue  # Try next request
+
+                    # Success!
+                    logger.info(f"✅ Device approved: user {user_id}, request_id {request_id}")
+                    return jsonify({
+                        "success": True,
+                        "message": "Device approved successfully",
+                        "user_id": user_id,
+                        "request_id": request_id,
+                        "output": stdout.strip() if stdout else "Device approved"
+                    }), 200
+
+                except Exception as e:
+                    logger.warning(f"⚠️ Request {request_id} execution failed: {str(e)}")
+                    last_error = str(e)
+                    continue  # Try next request
+
+            # All requests failed
+            logger.error(f"❌ All {len(pending_requests)} pending request(s) failed")
+            return jsonify({
+                "success": False,
+                "error": "All pending requests failed",
+                "message": last_error or "All approval attempts failed",
+                "attempted_requests": len(pending_requests)
+            }), 500
+
+        # 6. Execute device approval command (when request_id is provided)
         command = ['openclaw', 'devices', 'approve', request_id]
 
         try:
