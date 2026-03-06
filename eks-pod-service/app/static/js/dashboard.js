@@ -567,7 +567,7 @@ const Dashboard = {
         }
     },
 
-    // Handle approve device manually (check for pending requests)
+    // Handle approve device manually (auto-find pending request)
     async handleApproveDeviceManual() {
         if (!this.currentInstance) {
             this.showError('No instance selected');
@@ -577,27 +577,25 @@ const Dashboard = {
         try {
             this.hideError();
 
-            // Get device list
-            const devices = await API.listDevices(this.currentInstance.user_id);
-
-            // Simple approach: try to approve latest pending request
-            // Note: This assumes the API will handle finding pending requests
+            // Call API with request_id=null, backend will auto-find pending request
             const result = await API.approveDevice(
                 this.currentInstance.user_id,
-                'latest'  // Special value to approve most recent pending request
+                null  // request_id null triggers auto-find in backend
             );
 
             if (result.success) {
-                this.showSuccess('✅ Device approved!');
+                this.showSuccess('✅ Device approved successfully!');
 
-                // Reconnect WebSocket
-                setTimeout(() => {
-                    if (this.currentInstance && this.currentInstance.cloudfront_url) {
+                // Reconnect WebSocket after approval
+                if (this.wsManager.isConnected && this.currentInstance.cloudfront_url) {
+                    setTimeout(() => {
+                        console.log('🔄 Reconnecting WebSocket after device approval...');
                         this.wsManager.connect(this.currentInstance.cloudfront_url);
-                    }
-                }, 1000);
+                    }, 1000);
+                }
             } else {
-                this.showError('No pending device requests found');
+                // Backend returned success=false, meaning no pending requests
+                this.showError(result.message || 'No pending device requests found');
             }
         } catch (error) {
             console.error('Failed to approve device:', error);

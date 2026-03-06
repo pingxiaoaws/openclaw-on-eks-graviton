@@ -18,7 +18,7 @@ def approve_device(user_info):
     Request Body:
     {
         "user_id": "7ec7606c",
-        "request_id": "d5fd3ea8-7c50-4fac-a074-83ebab0b5c0d"
+        "request_id": "d5fd3ea8-..." (optional - auto-finds pending if not provided)
     }
 
     Response:
@@ -40,17 +40,15 @@ def approve_device(user_info):
             return jsonify({"error": "Request body is required"}), 400
 
         user_id = data.get('user_id')
-        request_id = data.get('request_id')
+        request_id = data.get('request_id')  # Now optional
 
         if not user_id:
             return jsonify({"error": "user_id is required"}), 400
-        if not request_id:
-            return jsonify({"error": "request_id is required"}), 400
 
         # 2. Authorization check - users can only approve devices for their own instances
         authenticated_user_id = generate_user_id(user_info['user_email'])
         if user_id != authenticated_user_id:
-            logger.warning(f"Authorization failed: user {user_info['user_email']} tried to approve device for user_id {user_id}")
+            logger.warning(f"Authorization failed: {user_info['user_email']} tried to approve for {user_id}")
             return jsonify({
                 "error": "Forbidden",
                 "message": "You can only approve devices for your own instance"
@@ -65,24 +63,66 @@ def approve_device(user_info):
         if not check_pod_exists(namespace, pod_name):
             return jsonify({
                 "error": "Pod not found",
-                "message": f"OpenClaw instance pod {pod_name} not found in namespace {namespace}"
+                "message": f"OpenClaw instance not found"
             }), 404
 
-        # 5. Execute device approval command
+        # 5. If request_id not provided, auto-find pending request
+        if not request_id:
+            logger.info(f"🔍 Auto-finding pending device request for user {user_id}")
+
+            # Call list devices command
+            list_command = ['openclaw', 'devices', 'list']
+            try:
+                list_stdout, list_stderr = exec_in_pod(namespace, pod_name, container_name, list_command)
+            except Exception as e:
+                logger.error(f"❌ Failed to list devices: {str(e)}")
+                return jsonify({
+                    "error": "Failed to list devices",
+                    "message": str(e)
+                }), 500
+
+            # Parse output to find pending requests
+            pending_requests = []
+            import re
+            for line in list_stdout.split('\n'):
+                if 'pending' in line.lower():
+                    # Try UUID format first
+                    match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', line, re.IGNORECASE)
+                    if match:
+                        pending_requests.append(match.group(1))
+                    else:
+                        # Try other ID formats
+                        match = re.search(r'(?:Request ID:|ID:)\s*([a-zA-Z0-9-]+)', line, re.IGNORECASE)
+                        if match:
+                            pending_requests.append(match.group(1))
+
+            if not pending_requests:
+                logger.info(f"ℹ️ No pending device requests for user {user_id}")
+                return jsonify({
+                    "success": False,
+                    "message": "No pending device pairing requests found",
+                    "user_id": user_id
+                }), 200  # HTTP 200 with success=false
+
+            # Use the first pending request
+            request_id = pending_requests[0]
+            logger.info(f"✅ Auto-selected pending request: {request_id}")
+
+        # 6. Execute device approval command
         command = ['openclaw', 'devices', 'approve', request_id]
 
         try:
             stdout, stderr = exec_in_pod(namespace, pod_name, container_name, command)
         except Exception as e:
-            logger.error(f"Failed to execute device approval: {str(e)}")
+            logger.error(f"❌ Failed to execute device approval: {str(e)}")
             return jsonify({
                 "error": "Execution failed",
                 "message": str(e)
             }), 500
 
-        # 6. Check if command succeeded
+        # 7. Check if command succeeded
         if stderr and 'error' in stderr.lower():
-            logger.error(f"Device approval command returned error: {stderr}")
+            logger.error(f"❌ Device approval command error: {stderr}")
             return jsonify({
                 "success": False,
                 "error": "Approval failed",
@@ -90,8 +130,8 @@ def approve_device(user_info):
                 "stderr": stderr
             }), 500
 
-        # 7. Success response
-        logger.info(f"Device approved successfully for user {user_id}, request_id {request_id}")
+        # 8. Success response
+        logger.info(f"✅ Device approved: user {user_id}, request_id {request_id}")
         return jsonify({
             "success": True,
             "message": "Device approved successfully",
@@ -101,7 +141,7 @@ def approve_device(user_info):
         }), 200
 
     except Exception as e:
-        logger.error(f"Error in approve_device: {str(e)}", exc_info=True)
+        logger.error(f"❌ Error in approve_device: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
