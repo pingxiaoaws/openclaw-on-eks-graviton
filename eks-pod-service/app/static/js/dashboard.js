@@ -337,12 +337,9 @@ const Dashboard = {
             gatewayEl.textContent = instance.api_gateway_url;
             document.getElementById('copy-gateway-btn').disabled = false;
         }
-        // Priority 3: kubectl port-forward command
-        else if (instance.user_id) {
-            gatewayEl.textContent = `kubectl port-forward -n openclaw-${instance.user_id} svc/openclaw-${instance.user_id} 18789:18789`;
-            document.getElementById('copy-gateway-btn').disabled = false;
-        } else {
-            gatewayEl.textContent = 'Not available yet';
+        // Priority 3: Generating message (instead of kubectl command)
+        else {
+            gatewayEl.textContent = 'Generating endpoint...';
             document.getElementById('copy-gateway-btn').disabled = true;
         }
 
@@ -417,10 +414,12 @@ const Dashboard = {
             const result = await API.createInstance(selectedRuntime, selectedProvider, siliconflowApiKey);
             console.log('Instance created:', result);
 
-            this.showSuccess('Instance creation started! Refreshing...');
+            // Show success state
+            createBtn.innerHTML = '<span>✓</span> Created';
+            this.showSuccess('Instance created successfully! Loading...');
 
             // Refresh after a delay
-            setTimeout(() => this.loadInstance(), 3000);
+            setTimeout(() => this.loadInstance(), 2000);
         } catch (error) {
             console.error('Failed to create instance:', error);
             this.showError(`Failed to create instance: ${error.message}`);
