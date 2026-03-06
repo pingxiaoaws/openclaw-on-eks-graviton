@@ -573,8 +573,21 @@ const Dashboard = {
             return;
         }
 
+        const approveBtn = document.getElementById('approve-device-btn');
+        const statusContainer = document.getElementById('device-approval-status');
+        const statusMessage = document.getElementById('approval-status-message');
+
         try {
             this.hideError();
+
+            // Set button to "Approving..." state
+            approveBtn.disabled = true;
+            approveBtn.innerHTML = '<span>⏳</span> Approving...';
+
+            // Hide previous status
+            if (statusContainer) {
+                statusContainer.style.display = 'none';
+            }
 
             // Call API with request_id=null, backend will auto-find pending request
             const result = await API.approveDevice(
@@ -583,7 +596,18 @@ const Dashboard = {
             );
 
             if (result.success) {
-                this.showSuccess('✅ Device approved successfully!');
+                // Success: Show approved button
+                approveBtn.innerHTML = '<span>✓</span> Approved';
+                approveBtn.classList.remove('btn-primary');
+                approveBtn.classList.add('btn-success');
+                // Keep button disabled - approved state
+
+                // Show success message below gateway endpoint
+                if (statusContainer && statusMessage) {
+                    statusMessage.className = 'approval-status-message success';
+                    statusMessage.innerHTML = '✅ Device approved successfully! You can now pair your devices.';
+                    statusContainer.style.display = 'block';
+                }
 
                 // Reconnect WebSocket after approval
                 if (this.wsManager.isConnected && this.currentInstance.cloudfront_url) {
@@ -594,10 +618,31 @@ const Dashboard = {
                 }
             } else {
                 // Backend returned success=false, meaning no pending requests
-                this.showError(result.message || 'No pending device requests found');
+                // Restore button to original state
+                approveBtn.disabled = false;
+                approveBtn.innerHTML = '<span>🔐</span> Approve Device';
+
+                // Show warning message
+                if (statusContainer && statusMessage) {
+                    statusMessage.className = 'approval-status-message warning';
+                    statusMessage.innerHTML = '⚠️ ' + (result.message || 'No pending device requests found');
+                    statusContainer.style.display = 'block';
+                }
             }
         } catch (error) {
             console.error('Failed to approve device:', error);
+
+            // Restore button to original state
+            approveBtn.disabled = false;
+            approveBtn.innerHTML = '<span>❌</span> Approve Device';
+
+            // Show error message
+            if (statusContainer && statusMessage) {
+                statusMessage.className = 'approval-status-message error';
+                statusMessage.innerHTML = '❌ Failed to approve device: ' + error.message + ' (Click to retry)';
+                statusContainer.style.display = 'block';
+            }
+
             this.showError(`Failed to approve device: ${error.message}`);
         }
     },

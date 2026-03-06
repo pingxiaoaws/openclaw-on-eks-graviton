@@ -743,6 +743,36 @@
             flex-shrink: 0;
         }
 
+        /* Device Approval Status */
+        .approval-status-message {
+            padding: 0.875rem 1.125rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+            font-weight: 500;
+            animation: slideDown 0.3s ease;
+        }
+
+        .approval-status-message.success {
+            background: rgba(0, 255, 157, 0.1);
+            border: 1px solid rgba(0, 255, 157, 0.3);
+            color: var(--success);
+        }
+
+        .approval-status-message.error {
+            background: rgba(255, 87, 87, 0.1);
+            border: 1px solid rgba(255, 87, 87, 0.3);
+            color: var(--danger);
+        }
+
+        .approval-status-message.warning {
+            background: rgba(255, 217, 61, 0.1);
+            border: 1px solid rgba(255, 217, 61, 0.3);
+            color: var(--warning);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             header {
@@ -909,6 +939,11 @@
                                     📋 Copy
                                 </button>
                             </div>
+                        </div>
+
+                        <div class="detail-group full-width" id="device-approval-status" style="display: none;">
+                            <label>Device Approval</label>
+                            <div id="approval-status-message" class="approval-status-message"></div>
                         </div>
                     </div>
 
