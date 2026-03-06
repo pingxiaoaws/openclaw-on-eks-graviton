@@ -89,21 +89,23 @@ def approve_device(user_info):
             # Check if there are any pending requests in the output
             has_pending = 'pending' in list_stdout.lower()
 
+            logger.info(f"Has pending: {has_pending}, stdout length: {len(list_stdout)}")
+            logger.info(f"First 300 chars of stdout: {repr(list_stdout[:300])}")
+
             if has_pending:
                 # Extract all UUIDs from the output (they appear in table rows)
-                for line in list_stdout.split('\n'):
-                    # Look for UUID pattern at the start of a line (first column in table)
-                    match = re.search(r'│\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\s*│', line, re.IGNORECASE)
+                for i, line in enumerate(list_stdout.split('\n')):
+                    # Look for UUID pattern anywhere in the line
+                    match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', line, re.IGNORECASE)
                     if match:
                         uuid = match.group(1)
                         # Avoid duplicates
                         if uuid not in pending_requests:
                             pending_requests.append(uuid)
-                            logger.info(f"Found pending request: {uuid}")
+                            logger.info(f"✅ Found pending request on line {i}: {uuid}")
 
             if not pending_requests:
                 logger.info(f"ℹ️ No pending device requests for user {user_id}")
-                logger.debug(f"List output: {list_stdout[:500]}")  # Log first 500 chars for debugging
                 return jsonify({
                     "success": False,
                     "message": "No pending device pairing requests found",
