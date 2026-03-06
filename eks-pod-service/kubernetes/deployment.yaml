@@ -58,6 +58,18 @@ spec:
               name: openclaw-provisioning-secret
               key: secret-key
               optional: true
+
+        # Pod Identity Configuration
+        - name: USE_POD_IDENTITY
+          value: "true"
+        - name: CREATE_IAM_ROLE_PER_USER
+          value: "false"
+        - name: SHARED_BEDROCK_ROLE_ARN
+          value: "arn:aws:iam::970547376847:role/openclaw-bedrock-shared"
+        - name: EKS_CLUSTER_NAME
+          value: "test-s4"
+        - name: AWS_REGION
+          value: "us-west-2"
         # OpenClaw Instance 配置
         # - name: OPENCLAW_RUNTIME_CLASS
         #   value: "kata-fc"  # 留空使用 runc

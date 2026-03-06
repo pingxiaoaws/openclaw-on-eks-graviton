@@ -74,6 +74,18 @@ class Config:
     EKS_CLUSTER_NAME = os.environ.get('EKS_CLUSTER_NAME', 'test-s4')
     USE_POD_IDENTITY = os.environ.get('USE_POD_IDENTITY', 'true').lower() == 'true'
 
+    # Pod Identity 共享 Role 配置
+    SHARED_BEDROCK_ROLE_ARN = os.environ.get(
+        'SHARED_BEDROCK_ROLE_ARN',
+        'arn:aws:iam::970547376847:role/openclaw-bedrock-shared'
+    )
+
+    # 是否为每个用户创建独立 IAM Role（设为 False 使用共享 Role）
+    CREATE_IAM_ROLE_PER_USER = os.environ.get(
+        'CREATE_IAM_ROLE_PER_USER',
+        'false'
+    ).lower() == 'true'
+
     # Cognito JWT 验证配置
     COGNITO_REGION = os.environ.get('COGNITO_REGION', 'us-west-2')
     COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', 'us-west-2_gvOCTiLQE')

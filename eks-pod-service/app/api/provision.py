@@ -95,33 +95,30 @@ def provision(user_info):
         # Create NetworkPolicy
         netpol, netpol_created = create_network_policy(k8s_client, namespace)
 
-        # Create IAM Role and Pod Identity Association (only needed for Bedrock)
+        # Create Pod Identity Association (only, no role creation)
         role_arn = None
         pod_identity_association_id = None
         if Config.USE_POD_IDENTITY and provider == 'bedrock':
-            logger.info(f"🔐 Creating IAM Role for Pod Identity: user_id={user_id}")
-            role_arn = create_pod_identity_role(user_id, region=Config.AWS_REGION)
+            # Use shared Bedrock Role (pre-created)
+            role_arn = Config.SHARED_BEDROCK_ROLE_ARN
+            logger.info(f"🔐 Using shared Bedrock IAM Role: {role_arn}")
 
-            if role_arn:
-                logger.info(f"✅ IAM Role created: {role_arn}")
+            # Create Pod Identity Association (link SA to shared Role)
+            service_account = f"openclaw-{user_id}"
+            logger.info(f"🔗 Creating Pod Identity Association: {namespace}/{service_account} → {role_arn}")
 
-                # Create Pod Identity Association
-                service_account = f"openclaw-{user_id}"
-                logger.info(f"🔗 Creating Pod Identity Association: {namespace}/{service_account}")
-                pod_identity_association_id = create_pod_identity_association(
-                    cluster_name=Config.EKS_CLUSTER_NAME,
-                    namespace=namespace,
-                    service_account=service_account,
-                    role_arn=role_arn,
-                    region=Config.AWS_REGION
-                )
+            pod_identity_association_id = create_pod_identity_association(
+                cluster_name=Config.EKS_CLUSTER_NAME,
+                namespace=namespace,
+                service_account=service_account,
+                role_arn=role_arn,
+                region=Config.AWS_REGION
+            )
 
-                if pod_identity_association_id:
-                    logger.info(f"✅ Pod Identity Association created: {pod_identity_association_id}")
-                else:
-                    logger.warning(f"⚠️ Failed to create Pod Identity Association")
+            if pod_identity_association_id:
+                logger.info(f"✅ Pod Identity Association created: {pod_identity_association_id}")
             else:
-                logger.error(f"❌ Failed to create IAM Role for user {user_id}")
+                logger.error(f"❌ Failed to create Pod Identity Association")
 
         # Create OpenClawInstance
         instance, instance_created = create_openclaw_instance(

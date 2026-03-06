@@ -85,11 +85,16 @@ def delete(user_info, user_id):
                     logger.info(f"✅ Deleted Pod Identity Association: {association_id}")
                     pod_identity_deleted = True
 
-            # Delete IAM Role
-            logger.info(f"🔐 Deleting IAM Role for user_id: {user_id}")
-            iam_role_deleted = delete_pod_identity_role(user_id, region=Config.AWS_REGION)
-            if iam_role_deleted:
-                logger.info(f"✅ Deleted IAM Role: openclaw-user-{user_id}")
+            # Skip IAM Role deletion (using shared role)
+            iam_role_deleted = False
+            if Config.CREATE_IAM_ROLE_PER_USER:
+                # Only delete if using per-user roles (legacy mode)
+                logger.info(f"🔐 Deleting IAM Role for user_id: {user_id}")
+                iam_role_deleted = delete_pod_identity_role(user_id, region=Config.AWS_REGION)
+                if iam_role_deleted:
+                    logger.info(f"✅ Deleted IAM Role: openclaw-user-{user_id}")
+            else:
+                logger.info(f"ℹ️  Skipping IAM Role deletion (using shared role)")
 
         # Delete namespace (will cascade delete all resources)
         k8s_client.core_v1.delete_namespace(
