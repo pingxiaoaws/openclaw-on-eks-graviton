@@ -345,17 +345,21 @@ const Dashboard = {
 
         // Update connect button based on ready_for_connect flag
         const connectBtn = document.getElementById('connect-btn');
+        const approveDeviceBtn = document.getElementById('approve-device-btn');
 
         // Keep buttons disabled during delete
         if (this.isDeleting) {
             connectBtn.disabled = true;
             connectBtn.innerHTML = '<span>⏳</span> Deleting...';
+            if (approveDeviceBtn) approveDeviceBtn.disabled = true;
         } else {
             const readyForConnect = instance.ready_for_connect === true;
 
             if (readyForConnect) {
                 connectBtn.disabled = false;
                 connectBtn.innerHTML = '<span>🔗</span> Connect to Gateway';
+                // Enable Approve Device button when instance is running
+                if (approveDeviceBtn) approveDeviceBtn.disabled = false;
             } else {
                 connectBtn.disabled = true;
                 // Show specific waiting message
@@ -364,6 +368,8 @@ const Dashboard = {
                 } else {
                     connectBtn.innerHTML = '<span>⏳</span> Starting...';
                 }
+                // Disable Approve Device while instance is not ready
+                if (approveDeviceBtn) approveDeviceBtn.disabled = true;
             }
         }
 
@@ -479,34 +485,28 @@ const Dashboard = {
         }
     },
 
-    // Handle connect to instance
+    // Handle connect to instance - open gateway in new tab
     async handleConnectInstance() {
         if (!this.currentInstance) {
             this.showError('No instance selected');
             return;
         }
 
-        // Prioritize CloudFront WebSocket URL
-        const wsUrl = this.currentInstance.cloudfront_url;
+        // Use CloudFront HTTP URL (for browser access)
+        const gatewayUrl = this.currentInstance.cloudfront_http_url;
 
-        if (!wsUrl) {
-            this.showError('CloudFront WebSocket URL not available yet. Please wait for instance to be ready.');
+        if (!gatewayUrl) {
+            this.showError('Gateway URL not available yet. Please wait for instance to be ready.');
             return;
         }
 
         try {
-            // Establish WebSocket connection
-            this.wsManager.connect(wsUrl);
-            this.showSuccess('Connecting to gateway...');
-
-            // Show WebSocket controls panel
-            const wsControls = document.getElementById('ws-controls');
-            if (wsControls) {
-                wsControls.classList.remove('hidden');
-            }
+            // Open gateway in new tab
+            window.open(gatewayUrl, '_blank');
+            this.showSuccess('Opening gateway in new tab...');
         } catch (error) {
-            console.error('Failed to connect:', error);
-            this.showError(`Failed to connect: ${error.message}`);
+            console.error('Failed to open gateway:', error);
+            this.showError(`Failed to open gateway: ${error.message}`);
         }
     },
 

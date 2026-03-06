@@ -912,39 +912,14 @@
                         </div>
                     </div>
 
-                    <!-- WebSocket Controls Panel -->
-                    <div id="ws-controls" class="ws-controls hidden">
-                        <div class="ws-status-panel">
-                            <div class="button-group">
-                                <button class="btn btn-primary"
-                                        onclick="Dashboard.handleApproveDeviceManual()"
-                                        title="Approve pending device pairing requests">
-                                    🔐 Approve Device
-                                </button>
-                                <button class="btn btn-secondary" onclick="Dashboard.handleDisconnectInstance()">
-                                    🔌 Disconnect
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Device Pairing Notification -->
-                        <div id="pairing-notification" class="pairing-notification hidden">
-                            <div class="notification-content">
-                                <span class="icon">🔐</span>
-                                <div class="message">
-                                    <strong>Device Pairing Required</strong>
-                                    <p>A new device is requesting access to your gateway</p>
-                                </div>
-                                <button class="btn btn-primary" onclick="Dashboard.handleApproveDevice()">
-                                    ✓ Approve Device
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
                     <div class="instance-actions">
                         <button id="connect-btn" class="btn btn-success" disabled>
                             <span>🔗</span> Connect to Gateway
+                        </button>
+                        <button id="approve-device-btn" class="btn btn-primary" disabled
+                                onclick="Dashboard.handleApproveDeviceManual()"
+                                title="Approve pending device pairing requests">
+                            <span>🔐</span> Approve Device
                         </button>
                         <button id="delete-btn" class="btn btn-danger">
                             <span>🗑️</span> Delete Instance
