@@ -70,7 +70,13 @@ const Auth = {
                             idToken: idToken,
                             accessToken: accessToken,
                             refreshToken: refreshToken,
-                            expiresAt: result.getIdToken().getExpiration() * 1000
+                            expiresAt: (() => {
+                                const exp = result.getIdToken().getExpiration();
+                                // Defensive check: if exp looks like milliseconds (> year 2030), don't multiply by 1000
+                                const expMs = exp > 2000000000 ? exp : exp * 1000;
+                                console.log('✅ Token expiration set:', new Date(expMs), '(', Math.floor((expMs - Date.now()) / 60000), 'minutes from now)');
+                                return expMs;
+                            })()
                         };
 
                         // Save to localStorage
@@ -99,10 +105,27 @@ const Auth = {
     // Check if token is still valid
     isTokenValid() {
         if (!this.session || !this.session.expiresAt) {
+            console.log('❌ Token validation failed: No session or expiresAt');
             return false;
         }
-        // Check if token expires in next 5 minutes
-        return this.session.expiresAt > (Date.now() + 5 * 60 * 1000);
+
+        // Check if token has expired (with 1 minute buffer instead of 5)
+        const threshold = Date.now() + 1 * 60 * 1000;  // 1 minute buffer
+        const isValid = this.session.expiresAt > threshold;
+        const minutesLeft = Math.floor((this.session.expiresAt - Date.now()) / 60000);
+
+        console.log('Token validation:', {
+            expiresAt: new Date(this.session.expiresAt).toISOString(),
+            now: new Date().toISOString(),
+            minutesLeft: minutesLeft,
+            isValid: isValid
+        });
+
+        if (!isValid) {
+            console.log('❌ Token expired or expiring soon (< 1 minute)');
+        }
+
+        return isValid;
     },
 
     // Get authorization header
