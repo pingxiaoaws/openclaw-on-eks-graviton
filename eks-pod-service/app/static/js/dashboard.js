@@ -129,9 +129,14 @@ const Dashboard = {
 
         // Check authentication
         if (!Auth.init()) {
-            console.log('❌ Not authenticated, redirecting to login');
-            const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
-            window.location.href = loginPath;
+            console.log('❌ Not authenticated');
+            console.log('⚠️ Auto-redirect disabled for debugging');
+            // Show error banner instead of redirecting
+            this.showError('Not authenticated. Please login first. (Auto-redirect disabled for debugging)');
+            this.showEmptyState();
+            // TEMPORARY: Disable auto-redirect for debugging
+            // const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
+            // window.location.href = loginPath;
             return;
         }
 

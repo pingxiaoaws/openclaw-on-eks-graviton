@@ -20,6 +20,15 @@ const API = {
             headers
         };
 
+        // Debug logging
+        console.log('🔍 API Request:', {
+            endpoint,
+            url,
+            method: config.method || 'GET',
+            hasAuthHeader: !!headers.Authorization,
+            authHeaderPreview: headers.Authorization ? headers.Authorization.substring(0, 30) + '...' : '❌ MISSING'
+        });
+
         try {
             const response = await fetch(url, config);
 
@@ -34,12 +43,17 @@ const API = {
             }
 
             if (!response.ok) {
-                // Auto-redirect to login on token expiry
+                // TEMPORARY: Disable auto-redirect on 401 for debugging
                 if (response.status === 401) {
-                    Auth.logout();
-                    const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
-                    window.location.href = loginPath;
-                    return;
+                    console.error('❌ 401 Unauthorized:', {
+                        endpoint,
+                        headers,
+                        response: data
+                    });
+                    // Auth.logout();
+                    // const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
+                    // window.location.href = loginPath;
+                    // return;
                 }
                 throw new Error(data.error || data.message || `HTTP ${response.status}`);
             }
