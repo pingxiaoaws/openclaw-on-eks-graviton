@@ -179,7 +179,11 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                 "value": Config.AWS_REGION
             }
         ]
-        logger.info(f"✅ Added AWS_REGION={Config.AWS_REGION} for Bedrock provider")
+        # Enable selfConfigure to allow Pod Identity (automountServiceAccountToken=true)
+        instance_body["spec"]["selfConfigure"] = {
+            "enabled": True
+        }
+        logger.info(f"✅ Added AWS_REGION={Config.AWS_REGION} and enabled selfConfigure for Bedrock Pod Identity")
 
     # Add cognito_sub if provided
     if cognito_sub:
