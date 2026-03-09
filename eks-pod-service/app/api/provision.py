@@ -117,6 +117,12 @@ def provision(user_info):
 
             if pod_identity_association_id:
                 logger.info(f"✅ Pod Identity Association created: {pod_identity_association_id}")
+                # Wait for Association to be fully active and webhook to sync (5 seconds)
+                # This prevents race condition where Pod is created before webhook recognizes the Association
+                import time
+                logger.info(f"⏳ Waiting 5 seconds for Pod Identity Association to sync with webhook...")
+                time.sleep(5)
+                logger.info(f"✅ Pod Identity Association sync delay completed")
             else:
                 logger.error(f"❌ Failed to create Pod Identity Association")
 
