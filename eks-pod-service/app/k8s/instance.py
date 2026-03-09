@@ -167,6 +167,20 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         }
     }
 
+    # Add AWS_REGION environment variable for Bedrock (required for Pod Identity)
+    if provider == 'bedrock':
+        instance_body["spec"]["env"] = [
+            {
+                "name": "AWS_REGION",
+                "value": Config.AWS_REGION
+            },
+            {
+                "name": "AWS_DEFAULT_REGION",
+                "value": Config.AWS_REGION
+            }
+        ]
+        logger.info(f"✅ Added AWS_REGION={Config.AWS_REGION} for Bedrock provider")
+
     # Add cognito_sub if provided
     if cognito_sub:
         instance_body["metadata"]["labels"]["openclaw.rocks/cognito-sub"] = cognito_sub
