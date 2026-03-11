@@ -17,8 +17,8 @@ Successfully implemented WebSocket-based CloudFront Gateway connection and Devic
 #### 1. `app/api/status.py` - CloudFront URL Support
 
 **Changes**:
-- Added `cloudfront_url` field (WebSocket): `wss://d3ik6njnl847zd.cloudfront.net/instance/{user_id}?token=xxx`
-- Added `cloudfront_http_url` field (HTTP): `https://d3ik6njnl847zd.cloudfront.net/instance/{user_id}/?token=xxx`
+- Added `cloudfront_url` field (WebSocket): `wss://dxxxexample.cloudfront.net/instance/{user_id}?token=xxx`
+- Added `cloudfront_http_url` field (HTTP): `https://dxxxexample.cloudfront.net/instance/{user_id}/?token=xxx`
 - Kept `api_gateway_url` for backward compatibility
 
 **Response Schema**:
@@ -28,9 +28,9 @@ Successfully implemented WebSocket-based CloudFront Gateway connection and Devic
   "status": "Running",
   "ready_for_connect": true,
   "gateway_endpoint": "openclaw-7ec7606c.openclaw.svc:18789",
-  "api_gateway_url": "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/7ec7606c/?token=xxx",
-  "cloudfront_url": "wss://d3ik6njnl847zd.cloudfront.net/instance/7ec7606c?token=xxx",
-  "cloudfront_http_url": "https://d3ik6njnl847zd.cloudfront.net/instance/7ec7606c/?token=xxx",
+  "api_gateway_url": "https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/instance/7ec7606c/?token=xxx",
+  "cloudfront_url": "wss://dxxxexample.cloudfront.net/instance/7ec7606c?token=xxx",
+  "cloudfront_http_url": "https://dxxxexample.cloudfront.net/instance/7ec7606c/?token=xxx",
   "gateway_token": "xxx"
 }
 ```
@@ -125,12 +125,12 @@ async listDevices(userId) {
 2. Instance status loads
    ↓
 3. Gateway Endpoint displays:
-   "https://d3ik6njnl847zd.cloudfront.net/instance/{user_id}/?token=xxx"
+   "https://dxxxexample.cloudfront.net/instance/{user_id}/?token=xxx"
    ↓
 4. User clicks "Connect to Gateway"
    ↓
 5. WebSocket connects to:
-   "wss://d3ik6njnl847zd.cloudfront.net/instance/{user_id}?token=xxx"
+   "wss://dxxxexample.cloudfront.net/instance/{user_id}?token=xxx"
    ↓
 6. WebSocket Controls Panel appears
    ↓
@@ -167,15 +167,15 @@ async listDevices(userId) {
 cd /Users/pingxiao/aws-workspace/kata-open-claw/open-claw-operator-on-EKS-kata/eks-pod-service
 
 # Build image
-docker build -t 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
+docker build -t 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
 
 # Login to ECR
 aws ecr get-login-password --region us-west-2 | \
   docker login --username AWS --password-stdin \
-  970547376847.dkr.ecr.us-west-2.amazonaws.com
+  111122223333.dkr.ecr.us-west-2.amazonaws.com
 
 # Push image
-docker push 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+docker push 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
 ```
 
 ### Step 2: Restart Deployment
@@ -209,14 +209,14 @@ kubectl logs -n openclaw-provisioning deployment/openclaw-provisioning -f
 **Objective**: Verify CloudFront URL is displayed in Gateway Endpoint
 
 **Steps**:
-1. Login to Dashboard: `https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/dashboard`
+1. Login to Dashboard: `https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/dashboard`
 2. Create instance (if needed)
 3. Wait for status: "Ready"
 4. Check "Gateway Endpoint" field
 
 **Expected**:
 ```
-Gateway Endpoint: https://d3ik6njnl847zd.cloudfront.net/instance/7ec7606c/?token=xxx
+Gateway Endpoint: https://dxxxexample.cloudfront.net/instance/7ec7606c/?token=xxx
 [📋 Copy]
 ```
 
@@ -231,7 +231,7 @@ Gateway Endpoint: https://d3ik6njnl847zd.cloudfront.net/instance/7ec7606c/?token
 
 **Expected Console Output**:
 ```
-🔌 Connecting to WebSocket: wss://d3ik6njnl847zd.cloudfront.net/instance/7ec7606c?token=xxx
+🔌 Connecting to WebSocket: wss://dxxxexample.cloudfront.net/instance/7ec7606c?token=xxx
 ✅ WebSocket connected
 ```
 
@@ -456,14 +456,14 @@ All configuration is read from environment variables (defined in `app/config.py`
 
 ```python
 # CloudFront Configuration
-CLOUDFRONT_DOMAIN = 'd3ik6njnl847zd.cloudfront.net'
-CLOUDFRONT_DISTRIBUTION_ID = 'E30KMUI0GGXXLY'
+CLOUDFRONT_DOMAIN = 'dxxxexample.cloudfront.net'
+CLOUDFRONT_DISTRIBUTION_ID = 'EXXXXXXXXXXXXX'
 USE_PUBLIC_ALB = True  # Enable CloudFront URLs
 
 # Gateway Configuration
 GATEWAY_CONFIG = {
     "allowedOrigins": [
-        "https://d3ik6njnl847zd.cloudfront.net",
+        "https://dxxxexample.cloudfront.net",
         "http://k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com",
         "https://k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com"
     ],

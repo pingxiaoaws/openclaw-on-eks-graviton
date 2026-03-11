@@ -27,7 +27,7 @@ Successfully deployed shared IAM role architecture for OpenClaw multi-tenant pro
 4. **Deployment**:
    - Pods: 2/2 Running
    - Pod Names: `openclaw-provisioning-796b4447d7-5kgk2`, `openclaw-provisioning-796b4447d7-tplnz`
-   - Image: `970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest`
+   - Image: `111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest`
 
 ---
 
@@ -37,12 +37,12 @@ Successfully deployed shared IAM role architecture for OpenClaw multi-tenant pro
 
 ```
 Shared Bedrock Role:
-  ARN: arn:aws:iam::970547376847:role/openclaw-bedrock-shared
+  ARN: arn:aws:iam::111122223333:role/openclaw-bedrock-shared
   Trust: pods.eks.amazonaws.com
   Policy: Bedrock InvokeModel permissions
 
 Provisioning Service Role:
-  ARN: arn:aws:iam::970547376847:role/openclaw-provisioning-service
+  ARN: arn:aws:iam::111122223333:role/openclaw-provisioning-service
   Trust: pods.eks.amazonaws.com
   Policy: EKS PodIdentityAssociation management
 ```
@@ -54,7 +54,7 @@ Association ID: a-z1anuvondr8pwlcvb
 Cluster: test-s4
 Namespace: openclaw-provisioning
 ServiceAccount: openclaw-provisioner
-Role: arn:aws:iam::970547376847:role/openclaw-provisioning-service
+Role: arn:aws:iam::111122223333:role/openclaw-provisioning-service
 ```
 
 ### ✅ Environment Variables
@@ -62,7 +62,7 @@ Role: arn:aws:iam::970547376847:role/openclaw-provisioning-service
 ```
 USE_POD_IDENTITY=true
 CREATE_IAM_ROLE_PER_USER=false
-SHARED_BEDROCK_ROLE_ARN=arn:aws:iam::970547376847:role/openclaw-bedrock-shared
+SHARED_BEDROCK_ROLE_ARN=arn:aws:iam::111122223333:role/openclaw-bedrock-shared
 EKS_CLUSTER_NAME=test-s4
 AWS_REGION=us-west-2
 ```
@@ -84,7 +84,7 @@ Restart Count: 0
 
 1. **Open Dashboard**:
    ```
-   https://d3ik6njnl847zd.cloudfront.net/dashboard
+   https://dxxxexample.cloudfront.net/dashboard
    ```
 
 2. **Login** with Cognito credentials
@@ -102,7 +102,7 @@ Restart Count: 0
 
 5. **Expected Logs**:
    ```
-   INFO - 🔐 Using shared Bedrock IAM Role: arn:aws:iam::970547376847:role/openclaw-bedrock-shared
+   INFO - 🔐 Using shared Bedrock IAM Role: arn:aws:iam::111122223333:role/openclaw-bedrock-shared
    INFO - 🔗 Creating Pod Identity Association: openclaw-xxx/openclaw-xxx → arn:aws:...
    INFO - ✅ Pod Identity Association created: a-xxxxx
    ```
@@ -228,9 +228,9 @@ git push origin main
 # Rebuild and redeploy
 ssh -i ~/.ssh/pingec2.key ec2-user@44.252.48.166 \
   "cd ~/openclaw-on-eks-graviton && git pull && cd eks-pod-service && \
-   aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 970547376847.dkr.ecr.us-west-2.amazonaws.com && \
-   docker build -t 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest . && \
-   docker push 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest"
+   aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 111122223333.dkr.ecr.us-west-2.amazonaws.com && \
+   docker build -t 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest . && \
+   docker push 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest"
 
 kubectl rollout restart deployment/openclaw-provisioning -n openclaw-provisioning
 ```

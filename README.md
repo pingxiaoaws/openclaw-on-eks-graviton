@@ -576,7 +576,7 @@ kubectl run aws-cli --image=amazon/aws-cli --rm -it \
   --env AWS_SECRET_ACCESS_KEY=<secret> \
   --env AWS_REGION=us-west-2 \
   -- bedrock-runtime invoke-model \
-  --model-id us.anthropic.claude-sonnet-4-5-20250929-v1:0 \
+  --model-id us.anthropic.claude-opus-4-6-v1:0 \
   --body '{"messages":[{"role":"user","content":"hello"}],"max_tokens":100}' \
   --region us-west-2 output.json
 

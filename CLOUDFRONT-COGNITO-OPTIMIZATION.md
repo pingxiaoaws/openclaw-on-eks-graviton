@@ -142,7 +142,7 @@ EOF
 
 # 创建 distribution
 aws cloudfront create-distribution \
-  --origin-domain-name 0qu1ls4sf5.execute-api.us-west-2.amazonaws.com \
+  --origin-domain-name xxxxxxxxxx.execute-api.us-west-2.amazonaws.com \
   --origin-path /prod \
   --default-root-object dashboard \
   --enabled \
@@ -241,7 +241,7 @@ aws route53 change-resource-record-sets --hosted-zone-id Z1234567890ABC --change
       "Name": "provisioning.openclaw.rocks",
       "Type": "CNAME",
       "TTL": 300,
-      "ResourceRecords": [{"Value": "d3ik6njnl847zd.cloudfront.net"}]
+      "ResourceRecords": [{"Value": "dxxxexample.cloudfront.net"}]
     }
   }]
 }'
@@ -561,8 +561,8 @@ import base64
 
 # Cognito 配置
 COGNITO_REGION = 'us-west-2'
-USER_POOL_ID = 'us-west-2_gvOCTiLQE'
-CLIENT_ID = 'f5qd2udi8508dd132d72qn7uc'
+USER_POOL_ID = 'us-west-2_ExAmPlE'
+CLIENT_ID = 'xxxxxxxxxxxxxxxxxxxxxxxxxx'
 COGNITO_JWKS_URL = f'https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{USER_POOL_ID}/.well-known/jwks.json'
 
 # Lambda@Edge 内存缓存 (容器复用时有效)
@@ -708,7 +708,7 @@ aws lambda create-function \
   --region us-east-1 \
   --function-name openclaw-cloudfront-auth \
   --runtime python3.11 \
-  --role arn:aws:iam::970547376847:role/lambda-edge-execution-role \
+  --role arn:aws:iam::111122223333:role/lambda-edge-execution-role \
   --handler index.lambda_handler \
   --zip-file fileb://lambda_edge_auth.zip \
   --timeout 5 \
@@ -831,7 +831,7 @@ def provision_instance(user_info):
 │  Listener Rule:                                                │
 │  - Type: authenticate-oidc                                     │
 │  - Issuer: cognito-idp.us-west-2.amazonaws.com/...            │
-│  - ClientId: f5qd2udi8508dd132d72qn7uc                        │
+│  - ClientId: xxxxxxxxxxxxxxxxxxxxxxxxxx                        │
 │  - OnUnauthenticatedRequest: authenticate                     │
 │  - SessionCookieName: AWSELBAuthSessionCookie                 │
 │  - SessionTimeout: 86400                                       │
@@ -856,16 +856,16 @@ def provision_instance(user_info):
 ```bash
 # 创建 OIDC 认证 action
 aws elbv2 create-rule \
-  --listener-arn arn:aws:elasticloadbalancing:us-west-2:970547376847:listener/app/openclaw-shared-alb/xxx/xxx \
+  --listener-arn arn:aws:elasticloadbalancing:us-west-2:111122223333:listener/app/openclaw-shared-alb/xxx/xxx \
   --priority 1 \
   --conditions Field=path-pattern,Values='/*' \
   --actions \
     Type=authenticate-oidc,Order=1,AuthenticateOidcConfig='{
-      Issuer=https://cognito-idp.us-west-2.amazonaws.com/us-west-2_gvOCTiLQE,
+      Issuer=https://cognito-idp.us-west-2.amazonaws.com/us-west-2_ExAmPlE,
       AuthorizationEndpoint=https://openclaw.auth.us-west-2.amazoncognito.com/oauth2/authorize,
       TokenEndpoint=https://openclaw.auth.us-west-2.amazoncognito.com/oauth2/token,
       UserInfoEndpoint=https://openclaw.auth.us-west-2.amazoncognito.com/oauth2/userInfo,
-      ClientId=f5qd2udi8508dd132d72qn7uc,
+      ClientId=xxxxxxxxxxxxxxxxxxxxxxxxxx,
       ClientSecret=<from-cognito>,
       SessionCookieName=AWSELBAuthSessionCookie,
       SessionTimeout=86400,
@@ -873,7 +873,7 @@ aws elbv2 create-rule \
       OnUnauthenticatedRequest=authenticate,
       UseExistingClientSecret=true
     }' \
-    Type=forward,Order=2,TargetGroupArn=arn:aws:elasticloadbalancing:us-west-2:970547376847:targetgroup/openclaw-provisioning/xxx
+    Type=forward,Order=2,TargetGroupArn=arn:aws:elasticloadbalancing:us-west-2:111122223333:targetgroup/openclaw-provisioning/xxx
 ```
 
 #### 2. 更新 Cognito App Client
@@ -881,11 +881,11 @@ aws elbv2 create-rule \
 ```bash
 # 添加 ALB callback URL
 aws cognito-idp update-user-pool-client \
-  --user-pool-id us-west-2_gvOCTiLQE \
-  --client-id f5qd2udi8508dd132d72qn7uc \
+  --user-pool-id us-west-2_ExAmPlE \
+  --client-id xxxxxxxxxxxxxxxxxxxxxxxxxx \
   --callback-urls \
     "https://gateway.openclaw.rocks/oauth2/idpresponse" \
-    "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/login" \
+    "https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/login" \
   --allowed-o-auth-flows authorization_code \
   --allowed-o-auth-scopes openid email profile \
   --supported-identity-providers COGNITO

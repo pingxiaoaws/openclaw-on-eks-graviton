@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw - CloudFront Distribution for Global Access'
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: "EKS cluster name"
+
+  AlbDnsName:
+    Type: String
+    Description: "ALB DNS name (from ALB stack)"
+
+  PriceClass:
+    Type: String
+    Default: PriceClass_100
+    AllowedValues:
+      - PriceClass_100
+      - PriceClass_200
+      - PriceClass_All
+    Description: "CloudFront price class (PriceClass_100 = US/Canada/Europe)"
+
+Resources:
+  # ================================
+  # CloudFront Distribution
+  # ================================
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub "OpenClaw Platform - ${ClusterName}"
+        Enabled: true
+        HttpVersion: http2and3
+        PriceClass: !Ref PriceClass
+
+        # Origin: ALB
+        Origins:
+          - Id: alb-origin
+            DomainName: !Ref AlbDnsName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 5
+            OriginCustomHeaders:
+              - HeaderName: X-CloudFront-Secret
+                HeaderValue: !Sub "${AWS::StackName}-secret-${AWS::AccountId}"
+
+        # Default Cache Behavior
+        DefaultCacheBehavior:
+          TargetOriginId: alb-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+
+          # No caching for dynamic API
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # Managed-CachingDisabled
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3  # Managed-AllViewer
+
+          # Forward all headers needed for API Gateway/ALB
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+            Headers:
+              - Authorization
+              - Origin
+              - Host
+              - Accept
+              - Content-Type
+              - X-Requested-With
+              - CloudFront-Forwarded-Proto
+              - CloudFront-Is-Desktop-Viewer
+              - CloudFront-Is-Mobile-Viewer
+              - CloudFront-Is-SmartTV-Viewer
+              - CloudFront-Is-Tablet-Viewer
+              - CloudFront-Viewer-Country
+
+        # Custom Error Responses
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 500
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 502
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 503
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 504
+            ErrorCachingMinTTL: 0
+
+        # Viewer Certificate (default CloudFront certificate)
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+          MinimumProtocolVersion: TLSv1.2_2021
+
+        # Logging (optional - can be enabled if needed)
+        # Logging:
+        #   Bucket: !Sub "${LoggingBucket}.s3.amazonaws.com"
+        #   Prefix: cloudfront-logs/
+        #   IncludeCookies: false
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${ClusterName}-cloudfront"
+        - Key: Environment
+          Value: !Ref ClusterName
+
+Outputs:
+  CloudFrontDistributionId:
+    Description: "CloudFront Distribution ID"
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub "${AWS::StackName}-DistributionId"
+
+  CloudFrontDomainName:
+    Description: "CloudFront Distribution Domain Name"
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-DomainName"
+
+  CloudFrontUrl:
+    Description: "CloudFront Distribution URL"
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+  LoginUrl:
+    Description: "Login URL via CloudFront"
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/login"
+
+  DashboardUrl:
+    Description: "Dashboard URL via CloudFront"
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/dashboard"

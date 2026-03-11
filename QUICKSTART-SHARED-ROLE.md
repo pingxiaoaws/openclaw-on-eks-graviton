@@ -27,8 +27,8 @@ cd /Users/pingxiao/aws-workspace/kata-open-claw/open-claw-operator-on-EKS-kata
 
 **Expected Output**:
 ```
-✅ Shared Bedrock Role: arn:aws:iam::970547376847:role/openclaw-bedrock-shared
-✅ Provisioning Service Role: arn:aws:iam::970547376847:role/openclaw-provisioning-service
+✅ Shared Bedrock Role: arn:aws:iam::111122223333:role/openclaw-bedrock-shared
+✅ Provisioning Service Role: arn:aws:iam::111122223333:role/openclaw-provisioning-service
 ✅ Pod Identity Association: a-xxxxx
 ```
 
@@ -60,7 +60,7 @@ cd /Users/pingxiao/aws-workspace/kata-open-claw/open-claw-operator-on-EKS-kata
 ### 4. Test New User Creation (3 minutes)
 
 **Via Dashboard**:
-1. Open https://d3ik6njnl847zd.cloudfront.net/dashboard
+1. Open https://dxxxexample.cloudfront.net/dashboard
 2. Login with Cognito credentials
 3. Click "Create Instance"
 4. Select "AWS Bedrock" provider
@@ -73,7 +73,7 @@ kubectl logs -n openclaw-provisioning deployment/openclaw-provisioning -f
 
 **Expected Logs**:
 ```
-INFO - 🔐 Using shared Bedrock IAM Role: arn:aws:iam::970547376847:role/openclaw-bedrock-shared
+INFO - 🔐 Using shared Bedrock IAM Role: arn:aws:iam::111122223333:role/openclaw-bedrock-shared
 INFO - 🔗 Creating Pod Identity Association: openclaw-xxx/openclaw-xxx → arn:aws:...
 INFO - ✅ Pod Identity Association created: a-xxxxx
 ```

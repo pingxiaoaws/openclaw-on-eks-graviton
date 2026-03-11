@@ -24,7 +24,7 @@ openclaw-provisioning-service
 
 ### ARN
 ```
-arn:aws:iam::970547376847:role/openclaw-provisioning-service
+arn:aws:iam::111122223333:role/openclaw-provisioning-service
 ```
 
 ### Trust Policy (AssumeRolePolicyDocument)
@@ -73,7 +73,7 @@ arn:aws:iam::970547376847:role/openclaw-provisioning-service
         "iam:PassRole",
         "iam:GetRole"
       ],
-      "Resource": "arn:aws:iam::970547376847:role/openclaw-bedrock-shared"
+      "Resource": "arn:aws:iam::111122223333:role/openclaw-bedrock-shared"
     }
   ]
 }
@@ -161,7 +161,7 @@ openclaw-bedrock-shared
 
 ### ARN
 ```
-arn:aws:iam::970547376847:role/openclaw-bedrock-shared
+arn:aws:iam::111122223333:role/openclaw-bedrock-shared
 ```
 
 ### Trust Policy (AssumeRolePolicyDocument)
@@ -288,7 +288,7 @@ aws eks create-pod-identity-association \
   --region us-west-2 \
   --namespace openclaw-provisioning \
   --service-account openclaw-provisioner \
-  --role-arn arn:aws:iam::970547376847:role/openclaw-provisioning-service
+  --role-arn arn:aws:iam::111122223333:role/openclaw-provisioning-service
 ```
 
 **Result**:
@@ -595,7 +595,7 @@ If you have existing users with per-user IAM roles:
 USER_ID="416e0b5f"
 NAMESPACE="openclaw-${USER_ID}"
 SERVICE_ACCOUNT="openclaw-${USER_ID}"
-SHARED_ROLE_ARN="arn:aws:iam::970547376847:role/openclaw-bedrock-shared"
+SHARED_ROLE_ARN="arn:aws:iam::111122223333:role/openclaw-bedrock-shared"
 
 # 1. List old associations
 OLD_ASSOCIATIONS=$(aws eks list-pod-identity-associations \

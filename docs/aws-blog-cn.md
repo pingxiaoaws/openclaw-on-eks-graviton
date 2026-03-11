@@ -468,7 +468,7 @@ spec:
       agents:
         defaults:
           model:
-            primary: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+            primary: "bedrock/us.anthropic.claude-opus-4-6-v1:0"
 
   # AWS credentials
   envFrom:
@@ -570,7 +570,7 @@ kubectl get node ip-172-31-7-197.us-west-2.compute.internal \
 kubectl logs -n openclaw openclaw-kata-bedrock-0 -c openclaw
 # 输出:
 # 2026-02-28T04:59:04.482Z [canvas] host mounted at http://127.0.0.1:18789/__openclaw__/canvas/
-# 2026-02-28T04:59:04.498Z [gateway] agent model: amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+# 2026-02-28T04:59:04.498Z [gateway] agent model: amazon-bedrock/us.anthropic.claude-opus-4-6-v1:0
 # 2026-02-28T04:59:04.499Z [gateway] listening on ws://127.0.0.1:18789
 # 2026-02-28T04:59:04.524Z [browser/server] Browser control listening on http://127.0.0.1:18791/
 ```

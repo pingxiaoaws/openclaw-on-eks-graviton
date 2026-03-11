@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw - EKS Cluster with Pod Identity'
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: "EKS cluster name"
+
+  ClusterVersion:
+    Type: String
+    Description: "EKS Kubernetes version"
+
+  VpcId:
+    Type: String
+    Description: "VPC ID"
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: "Comma-separated list of private subnet IDs"
+
+  ClusterRoleArn:
+    Type: String
+    Description: "IAM role ARN for EKS cluster"
+
+Resources:
+  # EKS Cluster Security Group
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "Security group for ${ClusterName} EKS cluster"
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${ClusterName}-cluster-sg"
+        - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+          Value: owned
+
+  ClusterSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ClusterSecurityGroup
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref ClusterSecurityGroup
+      Description: "Allow inter-cluster communication"
+
+  # EKS Cluster
+  EksCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Ref ClusterName
+      Version: !Ref ClusterVersion
+      RoleArn: !Ref ClusterRoleArn
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref ClusterSecurityGroup
+        SubnetIds: !Ref PrivateSubnetIds
+        EndpointPublicAccess: true
+        EndpointPrivateAccess: true
+        PublicAccessCidrs:
+          - 0.0.0.0/0
+      AccessConfig:
+        AuthenticationMode: API_AND_CONFIG_MAP
+      Logging:
+        ClusterLogging:
+          EnabledTypes:
+            - Type: api
+            - Type: audit
+            - Type: authenticator
+            - Type: controllerManager
+            - Type: scheduler
+      Tags:
+        - Key: Name
+          Value: !Ref ClusterName
+
+  # EKS Add-ons
+  VpcCniAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EksCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: vpc-cni
+      AddonVersion: v1.21.1-eksbuild.3
+      ResolveConflicts: OVERWRITE
+
+  CoreDnsAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EksCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: coredns
+      AddonVersion: v1.13.2-eksbuild.1
+      ResolveConflicts: OVERWRITE
+
+  KubeProxyAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EksCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: kube-proxy
+      AddonVersion: v1.34.3-eksbuild.5
+      ResolveConflicts: OVERWRITE
+
+  # Pod Identity Agent (required for Pod Identity)
+  PodIdentityAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EksCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: eks-pod-identity-agent
+      AddonVersion: v1.3.10-eksbuild.2
+      ResolveConflicts: OVERWRITE
+
+Outputs:
+  ClusterName:
+    Description: "EKS cluster name"
+    Value: !Ref EksCluster
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterName"
+
+  ClusterArn:
+    Description: "EKS cluster ARN"
+    Value: !GetAtt EksCluster.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterArn"
+
+  ClusterEndpoint:
+    Description: "EKS cluster API endpoint"
+    Value: !GetAtt EksCluster.Endpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterEndpoint"
+
+  ClusterCA:
+    Description: "EKS cluster certificate authority data"
+    Value: !GetAtt EksCluster.CertificateAuthorityData
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterCA"
+
+  ClusterSecurityGroupId:
+    Description: "EKS cluster security group ID"
+    Value: !Ref ClusterSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterSecurityGroupId"
+
+  ClusterOIDCIssuerUrl:
+    Description: "EKS cluster OIDC issuer URL"
+    Value: !GetAtt EksCluster.OpenIdConnectIssuerUrl
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterOIDCIssuerUrl"

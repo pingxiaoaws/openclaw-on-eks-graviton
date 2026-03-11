@@ -8,10 +8,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Load environment variables from .env
+if [ -f .env ]; then
+  set -a; source .env; set +a
+else
+  echo "⚠️  .env file not found! Copy .env.example to .env and fill in values."
+  exit 1
+fi
+
 AWS_REGION="${AWS_REGION:-us-west-2}"
-ECR_REPO="970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning"
-BUILD_SERVER="ec2-user@44.252.48.166"
-REMOTE_REPO_PATH="~/openclaw-on-eks-graviton"
+ECR_REPO="${ECR_REPO:-${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning}"
+BUILD_SERVER="${BUILD_SERVER:-ec2-user@${BUILD_SERVER_IP}}"
+REMOTE_REPO_PATH="${REMOTE_REPO_PATH:-~/openclaw-on-eks-graviton}"
 
 echo "=================================="
 echo "Deploy Shared Role Provisioning Service"
@@ -41,21 +49,21 @@ git push origin main
 # Step 3: Build on remote server
 echo ""
 echo "Step 3: Building Docker image on remote server..."
-ssh -i ~/.ssh/pingec2.key -o StrictHostKeyChecking=no "$BUILD_SERVER" << 'EOF'
-cd ~/openclaw-on-eks-graviton
+ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "$BUILD_SERVER" << EOF
+cd ${REMOTE_REPO_PATH}
 git pull origin main
 cd eks-pod-service
 
 echo "Logging into ECR..."
-aws ecr get-login-password --region us-west-2 | \
+aws ecr get-login-password --region ${AWS_REGION} | \
   docker login --username AWS --password-stdin \
-  970547376847.dkr.ecr.us-west-2.amazonaws.com
+  ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
 echo "Building Docker image..."
-docker build -t 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
+docker build -t ${ECR_REPO}:latest .
 
 echo "Pushing Docker image..."
-docker push 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+docker push ${ECR_REPO}:latest
 
 echo "Build complete!"
 EOF
@@ -99,5 +107,5 @@ echo "Verify with:"
 echo "  kubectl logs -n openclaw-provisioning deployment/openclaw-provisioning -f"
 echo ""
 echo "Test by creating a new instance via Dashboard:"
-echo "  https://d3ik6njnl847zd.cloudfront.net/dashboard"
+echo "  https://dxxxexample.cloudfront.net/dashboard"
 echo ""

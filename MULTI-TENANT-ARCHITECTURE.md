@@ -111,7 +111,7 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Amazon Bedrock Service                              │
 │                                                                              │
-│  Model: us.anthropic.claude-sonnet-4-5-20250929-v1:0                        │
+│  Model: us.anthropic.claude-opus-4-6-v1:0                        │
 │  认证: AWS Credentials (Secret: aws-credentials)                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -170,7 +170,7 @@ Annotations:
 - Namespace: `openclaw-provisioning`
 - Replicas: 2 (高可用)
 - 节点: Graviton (ARM64) via Karpenter
-- 镜像: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+- 镜像: 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
 
 **API 端点：**
 | 方法 | 路径 | 功能 | 认证 |

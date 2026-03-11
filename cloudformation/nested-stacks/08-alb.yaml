@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw - ALB Waiter (waits for ALB creation by Ingress)'
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: "EKS cluster name"
+
+  ArtifactBucket:
+    Type: String
+    Description: "S3 bucket for Lambda functions"
+
+  MaxAttempts:
+    Type: Number
+    Default: 10
+    Description: "Maximum number of polling attempts (10 attempts × 30s = 5 minutes)"
+
+  IntervalSeconds:
+    Type: Number
+    Default: 30
+    Description: "Interval between polling attempts in seconds"
+
+Resources:
+  # ================================
+  # Lambda Function for ALB Waiting
+  # ================================
+  AlbWaiterLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AlbWaiterPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:DescribeTags
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:DescribeTargetHealth
+                Resource: "*"
+
+  AlbWaiterLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ClusterName}-alb-waiter"
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt AlbWaiterLambdaRole.Arn
+      Timeout: 600
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import time
+          import urllib3
+
+          elbv2_client = boto3.client('elbv2')
+          http = urllib3.PoolManager()
+
+          def send_response(event, context, status, data=None, reason=None):
+              response_body = {
+                  'Status': status,
+                  'PhysicalResourceId': data.get('PhysicalResourceId', context.log_stream_name) if data else context.log_stream_name,
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': data or {},
+                  'Reason': reason or f"See CloudWatch Log Stream: {context.log_stream_name}"
+              }
+              print(f"Sending response: {json.dumps(response_body)}")
+              try:
+                  response = http.request(
+                      'PUT',
+                      event['ResponseURL'],
+                      body=json.dumps(response_body).encode('utf-8'),
+                      headers={'Content-Type': 'application/json'}
+                  )
+                  print(f"Response status: {response.status}")
+              except Exception as e:
+                  print(f"Error sending response: {str(e)}")
+
+          def find_alb_by_cluster_tag(cluster_name):
+              print(f"Searching for ALB with tag elbv2.k8s.aws/cluster={cluster_name}")
+
+              try:
+                  paginator = elbv2_client.get_paginator('describe_load_balancers')
+                  for page in paginator.paginate():
+                      for alb in page['LoadBalancers']:
+                          if alb['Type'] != 'application':
+                              continue
+
+                          alb_arn = alb['LoadBalancerArn']
+                          print(f"Checking ALB: {alb['LoadBalancerName']}")
+
+                          try:
+                              tags_response = elbv2_client.describe_tags(ResourceArns=[alb_arn])
+
+                              for tag_desc in tags_response['TagDescriptions']:
+                                  for tag in tag_desc['Tags']:
+                                      if tag['Key'] == 'elbv2.k8s.aws/cluster' and tag['Value'] == cluster_name:
+                                          print(f"Found matching ALB: {alb_arn}")
+                                          print(f"DNS Name: {alb['DNSName']}")
+                                          print(f"State: {alb['State']['Code']}")
+
+                                          if alb['State']['Code'] == 'active':
+                                              return {
+                                                  'AlbArn': alb_arn,
+                                                  'AlbDnsName': alb['DNSName'],
+                                                  'AlbState': alb['State']['Code'],
+                                                  'AlbName': alb['LoadBalancerName']
+                                              }
+                                          else:
+                                              print(f"ALB found but not active yet: {alb['State']['Code']}")
+                                              return None
+                          except Exception as e:
+                              print(f"Error getting tags for {alb_arn}: {str(e)}")
+                              continue
+              except Exception as e:
+                  print(f"Error listing load balancers: {str(e)}")
+                  raise
+
+              return None
+
+          def lambda_handler(event, context):
+              print(f"Received event: {json.dumps(event)}")
+
+              request_type = event['RequestType']
+              props = event['ResourceProperties']
+
+              try:
+                  if request_type == 'Delete':
+                      print("Delete request - nothing to do")
+                      send_response(event, context, 'SUCCESS', {
+                          'PhysicalResourceId': 'alb-waiter'
+                      })
+                      return
+
+                  cluster_name = props['ClusterName']
+                  max_attempts = int(props.get('MaxAttempts', 10))
+                  interval_seconds = int(props.get('IntervalSeconds', 30))
+
+                  print(f"Waiting for ALB for cluster: {cluster_name}")
+                  print(f"Max attempts: {max_attempts}, Interval: {interval_seconds}s")
+
+                  for attempt in range(1, max_attempts + 1):
+                      print(f"Attempt {attempt}/{max_attempts}")
+
+                      alb_info = find_alb_by_cluster_tag(cluster_name)
+
+                      if alb_info:
+                          print("ALB found and active!")
+                          send_response(event, context, 'SUCCESS', {
+                              'PhysicalResourceId': alb_info['AlbArn'],
+                              'AlbArn': alb_info['AlbArn'],
+                              'AlbDnsName': alb_info['AlbDnsName'],
+                              'AlbState': alb_info['AlbState'],
+                              'AlbName': alb_info['AlbName']
+                          })
+                          return
+
+                      if attempt < max_attempts:
+                          print(f"ALB not found or not active yet, waiting {interval_seconds}s...")
+                          time.sleep(interval_seconds)
+
+                  error_msg = f"ALB not found after {max_attempts} attempts ({max_attempts * interval_seconds}s). Please check: 1) OpenClaw Apps stack deployed successfully, 2) Ingress resource created, 3) ALB Controller logs"
+                  print(error_msg)
+                  send_response(event, context, 'FAILED', reason=error_msg)
+
+              except Exception as e:
+                  error_msg = f"Error: {str(e)}"
+                  print(error_msg)
+                  import traceback
+                  traceback.print_exc()
+                  send_response(event, context, 'FAILED', reason=error_msg)
+
+  # ================================
+  # Wait for ALB
+  # ================================
+  WaitForAlb:
+    Type: Custom::AlbWaiter
+    Properties:
+      ServiceToken: !GetAtt AlbWaiterLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      MaxAttempts: !Ref MaxAttempts
+      IntervalSeconds: !Ref IntervalSeconds
+
+Outputs:
+  AlbArn:
+    Description: "Application Load Balancer ARN"
+    Value: !GetAtt WaitForAlb.AlbArn
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbArn"
+
+  AlbDnsName:
+    Description: "Application Load Balancer DNS Name"
+    Value: !GetAtt WaitForAlb.AlbDnsName
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbDnsName"
+
+  AlbState:
+    Description: "Application Load Balancer State"
+    Value: !GetAtt WaitForAlb.AlbState
+
+  AlbName:
+    Description: "Application Load Balancer Name"
+    Value: !GetAtt WaitForAlb.AlbName

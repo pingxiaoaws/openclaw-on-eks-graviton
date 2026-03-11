@@ -57,7 +57,7 @@ User 3 → SA (openclaw-user3) → Pod Identity Assoc 3 ──┘
 # Pod Identity 共享 Role 配置
 SHARED_BEDROCK_ROLE_ARN = os.environ.get(
     'SHARED_BEDROCK_ROLE_ARN',
-    'arn:aws:iam::970547376847:role/openclaw-bedrock-shared'
+    'arn:aws:iam::111122223333:role/openclaw-bedrock-shared'
 )
 
 # 是否为每个用户创建独立 IAM Role（设为 False 使用共享 Role）
@@ -115,7 +115,7 @@ else:
 - name: CREATE_IAM_ROLE_PER_USER
   value: "false"
 - name: SHARED_BEDROCK_ROLE_ARN
-  value: "arn:aws:iam::970547376847:role/openclaw-bedrock-shared"
+  value: "arn:aws:iam::111122223333:role/openclaw-bedrock-shared"
 - name: EKS_CLUSTER_NAME
   value: "test-s4"
 - name: AWS_REGION
@@ -208,8 +208,8 @@ aws iam get-role --role-name openclaw-provisioning-service
 ```
 
 **Expected Output**:
-- `arn:aws:iam::970547376847:role/openclaw-bedrock-shared`
-- `arn:aws:iam::970547376847:role/openclaw-provisioning-service`
+- `arn:aws:iam::111122223333:role/openclaw-bedrock-shared`
+- `arn:aws:iam::111122223333:role/openclaw-provisioning-service`
 - Pod Identity Association ID for provisioning service
 
 ### Step 2: Deploy Code Changes
@@ -243,7 +243,7 @@ All checks pass with ✅
 
 ```bash
 # Login to Dashboard
-open https://d3ik6njnl847zd.cloudfront.net/dashboard
+open https://dxxxexample.cloudfront.net/dashboard
 
 # Create new instance (Bedrock provider)
 # Monitor logs
@@ -252,7 +252,7 @@ kubectl logs -n openclaw-provisioning deployment/openclaw-provisioning -f
 
 **Expected Logs**:
 ```
-INFO - 🔐 Using shared Bedrock IAM Role: arn:aws:iam::970547376847:role/openclaw-bedrock-shared
+INFO - 🔐 Using shared Bedrock IAM Role: arn:aws:iam::111122223333:role/openclaw-bedrock-shared
 INFO - 🔗 Creating Pod Identity Association: openclaw-xxx/openclaw-xxx → arn:aws:...
 INFO - ✅ Pod Identity Association created: a-xxxxx
 ```

@@ -16,7 +16,7 @@ spec:
       agents:
         defaults:
           model:
-            primary: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+            primary: "bedrock/us.anthropic.claude-opus-4-6-v1:0"
 
   # AWS credentials for Bedrock
   envFrom:

@@ -11,7 +11,7 @@
 
 **用户名**: `testuser3@openclaw.rocks`
 **密码**: `OpenClawTest2026!`
-**登录URL**: https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/
+**登录URL**: https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/
 
 ## 🛠️ 浏览器端排查步骤
 
@@ -36,7 +36,7 @@
 
 ### 步骤 2: 检查浏览器控制台错误
 
-1. 打开登录页面: https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/
+1. 打开登录页面: https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/
 2. 按 `F12` 或 `Cmd+Option+I` 打开开发者工具
 3. 切换到 **Console** 标签
 4. 尝试登录
@@ -107,7 +107,7 @@ console.log('localStorage:', localStorage);
 ```bash
 # 重置密码（如果需要）
 aws cognito-idp admin-set-user-password \
-  --user-pool-id us-west-2_gvOCTiLQE \
+  --user-pool-id us-west-2_ExAmPlE \
   --username testuser3@openclaw.rocks \
   --password 'NewPassword123!' \
   --permanent \
@@ -148,7 +148,7 @@ kubectl logs -n openclaw-provisioning deployment/openclaw-provisioning --tail=50
 # 1. 获取 JWT Token
 TOKEN=$(aws cognito-idp initiate-auth \
   --auth-flow USER_PASSWORD_AUTH \
-  --client-id 7hu644gbgodv2bap8cq6eb02n7 \
+  --client-id xxxxxxxxxxxxxxxxxxxxxxxxxx \
   --region us-west-2 \
   --auth-parameters USERNAME=testuser3@openclaw.rocks,PASSWORD='OpenClawTest2026!' \
   --query 'AuthenticationResult.IdToken' \
@@ -157,14 +157,14 @@ TOKEN=$(aws cognito-idp initiate-auth \
 echo "Token (前50字符): ${TOKEN:0:50}..."
 
 # 2. 测试 API 调用
-curl -X POST https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/provision \
+curl -X POST https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/provision \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{}' | jq .
 
 # 3. 查看状态
 USER_ID=$(echo -n "testuser3@openclaw.rocks" | shasum -a 256 | cut -c1-12)
-curl -X GET https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/status/$USER_ID \
+curl -X GET https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/status/$USER_ID \
   -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
@@ -189,4 +189,4 @@ curl -X GET https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/status/$
 
 **最后更新**: 2026-03-04
 **用户**: testuser3@openclaw.rocks
-**登录URL**: https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/
+**登录URL**: https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/

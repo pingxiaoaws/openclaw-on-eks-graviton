@@ -193,7 +193,7 @@ spec:
       agents:
         defaults:
           model:
-            primary: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+            primary: "bedrock/us.anthropic.claude-opus-4-6-v1:0"
 
   # AWS credentials for Bedrock
   envFrom:
@@ -321,7 +321,7 @@ kubectl run -it --rm test-openclaw --image=curlimages/curl:latest --restart=Neve
 kubectl run -it --rm test-openclaw --image=curlimages/curl:latest --restart=Never -- \
   curl -X POST -H "Authorization: Bearer $GATEWAY_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"model":"bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0","messages":[{"role":"user","content":"Hello"}]}' \
+  -d '{"model":"bedrock/us.anthropic.claude-opus-4-6-v1:0","messages":[{"role":"user","content":"Hello"}]}' \
   http://$GATEWAY_ENDPOINT/v1/messages
 ```
 

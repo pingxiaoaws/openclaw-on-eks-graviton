@@ -18,15 +18,15 @@ A production multi-tenant AI Agent platform running on Amazon EKS, featuring:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Cognito User Pool (us-west-2_gvOCTiLQE)                            │
+│  Cognito User Pool (us-west-2_ExAmPlE)                            │
 │                                                                       │
-│  Client: f5qd2udi8508dd132d72qn7uc                                  │
+│  Client: xxxxxxxxxxxxxxxxxxxxxxxxxx                                  │
 └───────────────────────┬───────────────────────────────────────────┘
                         │ JWT token (idToken)
                         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│  API Gateway HTTP API (0qu1ls4sf5)                                  │
-│  https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod       │
+│  API Gateway HTTP API (xxxxxxxxxx)                                  │
+│  https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod       │
 │                                                                       │
 │  Routes:                                                              │
 │  - POST /provision         → JWT auth (CognitoAuthorizer)           │
@@ -43,7 +43,7 @@ A production multi-tenant AI Agent platform running on Amazon EKS, featuring:
 │  │  Namespace: openclaw-provisioning                              │ │
 │  │                                                                 │ │
 │  │  Deployment: openclaw-provisioning (2 replicas)                │ │
-│  │  Image: 970547376847.dkr.ecr.us-west-2.amazonaws.com/         │ │
+│  │  Image: 111122223333.dkr.ecr.us-west-2.amazonaws.com/         │ │
 │  │         openclaw-provisioning:latest                           │ │
 │  │                                                                 │ │
 │  │  - Flask app with JWT verification (python-jose)               │ │
@@ -167,11 +167,11 @@ cd eks-pod-service
 # Login to ECR
 aws ecr get-login-password --region us-west-2 | \
   docker login --username AWS --password-stdin \
-  970547376847.dkr.ecr.us-west-2.amazonaws.com
+  111122223333.dkr.ecr.us-west-2.amazonaws.com
 
 # Build and push image
-docker build -t 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
-docker push 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+docker build -t 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
+docker push 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
 
 # Restart deployment to pick up new image
 kubectl rollout restart deployment openclaw-provisioning -n openclaw-provisioning
@@ -290,13 +290,13 @@ kubectl exec -n openclaw-<user_id> openclaw-<user_id>-0 -c openclaw -- uname -r
 aws apigatewayv2 get-apis --region us-west-2 \
   --query 'Items[?Name==`openclaw-provisioning-api`].ApiEndpoint' \
   --output text
-# Output: https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com
+# Output: https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com
 ```
 
 **Test health** (no auth required):
 
 ```bash
-curl https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/health
+curl https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/health
 ```
 
 **Test provision** (requires JWT token):
@@ -305,14 +305,14 @@ curl https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/health
 # Get JWT token from Cognito (example using AWS CLI)
 TOKEN=$(aws cognito-idp initiate-auth \
   --auth-flow USER_PASSWORD_AUTH \
-  --client-id f5qd2udi8508dd132d72qn7uc \
+  --client-id xxxxxxxxxxxxxxxxxxxxxxxxxx \
   --auth-parameters USERNAME=<email>,PASSWORD=<password> \
   --region us-west-2 \
   --query 'AuthenticationResult.IdToken' \
   --output text)
 
 # Create instance
-curl -X POST https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/provision \
+curl -X POST https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/provision \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json"
 ```
@@ -334,13 +334,13 @@ OPENCLAW_DEFAULTS = {
     },
     'storage_size': '10Gi',
     'storage_class': 'efs-sc',                           # EFS (ReadWriteMany, cross-AZ)
-    'model': 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'
+    'model': 'bedrock/us.anthropic.claude-opus-4-6-v1:0'
 }
 
 # Cognito JWT verification
 COGNITO_REGION = 'us-west-2'
-COGNITO_USER_POOL_ID = 'us-west-2_gvOCTiLQE'
-COGNITO_CLIENT_ID = 'f5qd2udi8508dd132d72qn7uc'
+COGNITO_USER_POOL_ID = 'us-west-2_ExAmPlE'
+COGNITO_CLIENT_ID = 'xxxxxxxxxxxxxxxxxxxxxxxxxx'
 ```
 
 **Environment variables** (set in `kubernetes/deployment.yaml`):
@@ -367,7 +367,7 @@ spec:
       agents:
         defaults:
           model:
-            primary: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+            primary: "bedrock/us.anthropic.claude-opus-4-6-v1:0"
 
   envFrom:
     - secretRef:
@@ -466,7 +466,7 @@ kubectl get deployment openclaw-provisioning -n openclaw-provisioning \
 
 # 2. Test JWKS endpoint accessibility from pod
 kubectl exec -n openclaw-provisioning deployment/openclaw-provisioning -- \
-  curl -s https://cognito-idp.us-west-2.amazonaws.com/us-west-2_gvOCTiLQE/.well-known/jwks.json
+  curl -s https://cognito-idp.us-west-2.amazonaws.com/us-west-2_ExAmPlE/.well-known/jwks.json
 
 # 3. Check logs for JWT verification errors
 kubectl logs -n openclaw-provisioning deployment/openclaw-provisioning \

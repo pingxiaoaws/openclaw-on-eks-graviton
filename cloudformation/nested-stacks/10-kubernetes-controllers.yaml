@@ -1,0 +1,477 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw - Kubernetes Controllers (ALB, EFS CSI, Kata Runtime)'
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: "EKS cluster name"
+
+  ALBControllerRoleArn:
+    Type: String
+    Description: "IAM role ARN for ALB Controller (Pod Identity)"
+
+  EFSCSIDriverRoleArn:
+    Type: String
+    Description: "IAM role ARN for EFS CSI Driver (Pod Identity)"
+
+  VpcId:
+    Type: String
+    Description: "VPC ID"
+
+  ArtifactBucket:
+    Type: String
+    Description: "S3 bucket for Lambda functions"
+
+Resources:
+  # ================================
+  # Helm Lambda Function (reuse from Karpenter)
+  # ================================
+  HelmLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: HelmLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                Resource: !Sub "arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ArtifactBucket}/*"
+
+  HelmLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ClusterName}-helm-controllers"
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt HelmLambdaExecutionRole.Arn
+      Timeout: 600
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import subprocess
+          import os
+          import urllib3
+
+          eks_client = boto3.client('eks')
+          http = urllib3.PoolManager()
+
+          def send_response(event, context, status, data=None, reason=None):
+              response_body = {
+                  'Status': status,
+                  'PhysicalResourceId': data.get('PhysicalResourceId', context.log_stream_name) if data else context.log_stream_name,
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': data or {},
+                  'Reason': reason or f"See CloudWatch Log Stream: {context.log_stream_name}"
+              }
+              http.request('PUT', event['ResponseURL'], body=json.dumps(response_body), headers={'Content-Type': 'application/json'})
+
+          def get_kubeconfig(cluster_name):
+              cluster_info = eks_client.describe_cluster(name=cluster_name)['cluster']
+              kubeconfig = {
+                  'apiVersion': 'v1',
+                  'kind': 'Config',
+                  'clusters': [{
+                      'name': cluster_name,
+                      'cluster': {
+                          'server': cluster_info['endpoint'],
+                          'certificate-authority-data': cluster_info['certificateAuthority']['data']
+                      }
+                  }],
+                  'contexts': [{
+                      'name': cluster_name,
+                      'context': {'cluster': cluster_name, 'user': cluster_name}
+                  }],
+                  'current-context': cluster_name,
+                  'users': [{
+                      'name': cluster_name,
+                      'user': {
+                          'exec': {
+                              'apiVersion': 'client.authentication.k8s.io/v1beta1',
+                              'command': 'aws',
+                              'args': ['eks', 'get-token', '--cluster-name', cluster_name, '--region', os.environ['AWS_REGION']]
+                          }
+                      }
+                  }]
+              }
+              return kubeconfig
+
+          def lambda_handler(event, context):
+              try:
+                  request_type = event['RequestType']
+                  props = event['ResourceProperties']
+                  cluster_name = props['ClusterName']
+                  chart_name = props.get('ChartName')
+                  release_name = props.get('ReleaseName')
+                  namespace = props.get('Namespace', 'default')
+                  values_yaml = props.get('ValuesYaml', '')
+                  repo_name = props.get('RepoName')
+                  repo_url = props.get('RepoUrl')
+
+                  if request_type == 'Delete':
+                      send_response(event, context, 'SUCCESS', {'PhysicalResourceId': release_name})
+                      return
+
+                  # Setup kubeconfig
+                  kubeconfig = get_kubeconfig(cluster_name)
+                  with open('/tmp/kubeconfig', 'w') as f:
+                      json.dump(kubeconfig, f)
+                  os.environ['KUBECONFIG'] = '/tmp/kubeconfig'
+
+                  # Add helm repo if specified
+                  if repo_name and repo_url:
+                      subprocess.run(['helm', 'repo', 'add', repo_name, repo_url], check=True, timeout=60)
+                      subprocess.run(['helm', 'repo', 'update'], check=True, timeout=60)
+
+                  # Write values
+                  if values_yaml:
+                      with open('/tmp/values.yaml', 'w') as f:
+                          f.write(values_yaml)
+
+                  # Helm install/upgrade
+                  cmd = ['helm', 'upgrade', '--install', release_name, chart_name, '--namespace', namespace, '--create-namespace', '--wait', '--timeout=10m']
+                  if values_yaml:
+                      cmd.extend(['-f', '/tmp/values.yaml'])
+
+                  result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+                  if result.returncode != 0:
+                      raise Exception(f"Helm command failed: {result.stderr}")
+
+                  send_response(event, context, 'SUCCESS', {
+                      'PhysicalResourceId': release_name,
+                      'Output': result.stdout
+                  })
+
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  import traceback
+                  traceback.print_exc()
+                  send_response(event, context, 'FAILED', reason=str(e))
+
+  KubectlLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ClusterName}-kubectl-controllers"
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt HelmLambdaExecutionRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import subprocess
+          import os
+          import urllib3
+
+          eks_client = boto3.client('eks')
+          http = urllib3.PoolManager()
+
+          def send_response(event, context, status, data=None, reason=None):
+              response_body = {
+                  'Status': status,
+                  'PhysicalResourceId': data.get('PhysicalResourceId', context.log_stream_name) if data else context.log_stream_name,
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': data or {},
+                  'Reason': reason or f"See CloudWatch Log Stream: {context.log_stream_name}"
+              }
+              http.request('PUT', event['ResponseURL'], body=json.dumps(response_body), headers={'Content-Type': 'application/json'})
+
+          def get_kubeconfig(cluster_name):
+              cluster_info = eks_client.describe_cluster(name=cluster_name)['cluster']
+              kubeconfig = {
+                  'apiVersion': 'v1',
+                  'kind': 'Config',
+                  'clusters': [{
+                      'name': cluster_name,
+                      'cluster': {
+                          'server': cluster_info['endpoint'],
+                          'certificate-authority-data': cluster_info['certificateAuthority']['data']
+                      }
+                  }],
+                  'contexts': [{
+                      'name': cluster_name,
+                      'context': {'cluster': cluster_name, 'user': cluster_name}
+                  }],
+                  'current-context': cluster_name,
+                  'users': [{
+                      'name': cluster_name,
+                      'user': {
+                          'exec': {
+                              'apiVersion': 'client.authentication.k8s.io/v1beta1',
+                              'command': 'aws',
+                              'args': ['eks', 'get-token', '--cluster-name', cluster_name, '--region', os.environ['AWS_REGION']]
+                          }
+                      }
+                  }]
+              }
+              return kubeconfig
+
+          def lambda_handler(event, context):
+              try:
+                  request_type = event['RequestType']
+                  props = event['ResourceProperties']
+                  cluster_name = props['ClusterName']
+                  manifest = props.get('Manifest', '')
+
+                  if request_type == 'Delete':
+                      send_response(event, context, 'SUCCESS', {'PhysicalResourceId': props.get('ResourceName', 'resource')})
+                      return
+
+                  kubeconfig = get_kubeconfig(cluster_name)
+                  with open('/tmp/kubeconfig', 'w') as f:
+                      json.dump(kubeconfig, f)
+                  os.environ['KUBECONFIG'] = '/tmp/kubeconfig'
+
+                  with open('/tmp/manifest.yaml', 'w') as f:
+                      f.write(manifest)
+
+                  result = subprocess.run(['kubectl', 'apply', '-f', '/tmp/manifest.yaml'], capture_output=True, text=True, timeout=60)
+
+                  if result.returncode != 0:
+                      raise Exception(f"kubectl apply failed: {result.stderr}")
+
+                  send_response(event, context, 'SUCCESS', {
+                      'PhysicalResourceId': props.get('ResourceName', 'resource'),
+                      'Output': result.stdout
+                  })
+
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  send_response(event, context, 'FAILED', reason=str(e))
+
+  # ================================
+  # ALB Controller
+  # ================================
+  ALBControllerHelmRelease:
+    Type: Custom::HelmRelease
+    Properties:
+      ServiceToken: !GetAtt HelmLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      RepoName: eks
+      RepoUrl: https://aws.github.io/eks-charts
+      ChartName: eks/aws-load-balancer-controller
+      ReleaseName: aws-load-balancer-controller
+      Namespace: kube-system
+      ValuesYaml: !Sub |
+        clusterName: ${ClusterName}
+        serviceAccount:
+          create: true
+          name: aws-load-balancer-controller
+        region: ${AWS::Region}
+        vpcId: ${VpcId}
+        replicaCount: 2
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+  ALBControllerPodIdentity:
+    Type: AWS::EKS::PodIdentityAssociation
+    DependsOn: ALBControllerHelmRelease
+    Properties:
+      ClusterName: !Ref ClusterName
+      Namespace: kube-system
+      ServiceAccount: aws-load-balancer-controller
+      RoleArn: !Ref ALBControllerRoleArn
+
+  # ================================
+  # EFS CSI Driver
+  # ================================
+  EFSCSIDriverHelmRelease:
+    Type: Custom::HelmRelease
+    Properties:
+      ServiceToken: !GetAtt HelmLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      RepoName: aws-efs-csi-driver
+      RepoUrl: https://kubernetes-sigs.github.io/aws-efs-csi-driver
+      ChartName: aws-efs-csi-driver/aws-efs-csi-driver
+      ReleaseName: aws-efs-csi-driver
+      Namespace: kube-system
+      ValuesYaml: !Sub |
+        controller:
+          serviceAccount:
+            create: true
+            name: efs-csi-controller-sa
+        node:
+          serviceAccount:
+            create: true
+            name: efs-csi-node-sa
+
+  EFSCSIDriverPodIdentity:
+    Type: AWS::EKS::PodIdentityAssociation
+    DependsOn: EFSCSIDriverHelmRelease
+    Properties:
+      ClusterName: !Ref ClusterName
+      Namespace: kube-system
+      ServiceAccount: efs-csi-controller-sa
+      RoleArn: !Ref EFSCSIDriverRoleArn
+
+  # ================================
+  # Kata Containers DaemonSet
+  # ================================
+  KataDaemonSet:
+    Type: Custom::KubectlApply
+    Properties:
+      ServiceToken: !GetAtt KubectlLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      ResourceName: kata-deploy-daemonset
+      Manifest: |
+        apiVersion: apps/v1
+        kind: DaemonSet
+        metadata:
+          name: kata-deploy
+          namespace: kube-system
+        spec:
+          selector:
+            matchLabels:
+              name: kata-deploy
+          template:
+            metadata:
+              labels:
+                name: kata-deploy
+            spec:
+              nodeSelector:
+                workload-type: kata
+              tolerations:
+                - key: kata
+                  operator: Exists
+                  effect: NoSchedule
+              hostNetwork: true
+              hostPID: true
+              containers:
+                - name: kata-deploy
+                  image: quay.io/kata-containers/kata-deploy:3.10.0
+                  imagePullPolicy: Always
+                  securityContext:
+                    privileged: true
+                  env:
+                    - name: NODE_NAME
+                      valueFrom:
+                        fieldRef:
+                          fieldPath: spec.nodeName
+                  volumeMounts:
+                    - name: host-root
+                      mountPath: /host
+                    - name: host-containerd
+                      mountPath: /run/containerd
+              volumes:
+                - name: host-root
+                  hostPath:
+                    path: /
+                - name: host-containerd
+                  hostPath:
+                    path: /run/containerd
+
+  # ================================
+  # RuntimeClasses
+  # ================================
+  KataFirecrackerRuntimeClass:
+    Type: Custom::KubectlApply
+    DependsOn: KataDaemonSet
+    Properties:
+      ServiceToken: !GetAtt KubectlLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      ResourceName: runtimeclass-kata-fc
+      Manifest: |
+        apiVersion: node.k8s.io/v1
+        kind: RuntimeClass
+        metadata:
+          name: kata-fc
+        handler: kata-fc
+        scheduling:
+          nodeSelector:
+            workload-type: kata
+          tolerations:
+            - key: kata
+              operator: Exists
+              effect: NoSchedule
+
+  KataQemuRuntimeClass:
+    Type: Custom::KubectlApply
+    DependsOn: KataDaemonSet
+    Properties:
+      ServiceToken: !GetAtt KubectlLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      ResourceName: runtimeclass-kata-qemu
+      Manifest: |
+        apiVersion: node.k8s.io/v1
+        kind: RuntimeClass
+        metadata:
+          name: kata-qemu
+        handler: kata-qemu
+        scheduling:
+          nodeSelector:
+            workload-type: kata
+          tolerations:
+            - key: kata
+              operator: Exists
+              effect: NoSchedule
+
+  # ================================
+  # Metrics Server (optional but useful)
+  # ================================
+  MetricsServerHelmRelease:
+    Type: Custom::HelmRelease
+    Properties:
+      ServiceToken: !GetAtt HelmLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      RepoName: metrics-server
+      RepoUrl: https://kubernetes-sigs.github.io/metrics-server
+      ChartName: metrics-server/metrics-server
+      ReleaseName: metrics-server
+      Namespace: kube-system
+      ValuesYaml: |
+        args:
+          - --kubelet-insecure-tls
+          - --kubelet-preferred-address-types=InternalIP
+
+Outputs:
+  ALBControllerReleaseName:
+    Description: "ALB Controller Helm release name"
+    Value: aws-load-balancer-controller
+
+  EFSCSIDriverReleaseName:
+    Description: "EFS CSI Driver Helm release name"
+    Value: aws-efs-csi-driver
+
+  KataDaemonSetName:
+    Description: "Kata DaemonSet name"
+    Value: kata-deploy
+
+  KataFirecrackerRuntimeClassName:
+    Description: "Kata Firecracker RuntimeClass name"
+    Value: kata-fc
+
+  KataQemuRuntimeClassName:
+    Description: "Kata QEMU RuntimeClass name"
+    Value: kata-qemu
+
+  MetricsServerReleaseName:
+    Description: "Metrics Server Helm release name"
+    Value: metrics-server

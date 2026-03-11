@@ -1,0 +1,578 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw - Karpenter Autoscaler with Kata NodePool'
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: "EKS cluster name"
+
+  ClusterEndpoint:
+    Type: String
+    Description: "EKS cluster API endpoint"
+
+  ClusterCA:
+    Type: String
+    Description: "EKS cluster certificate authority data"
+
+  VpcCidr:
+    Type: String
+    Description: "VPC CIDR block"
+
+  KarpenterControllerRoleArn:
+    Type: String
+    Description: "IAM role ARN for Karpenter controller (Pod Identity)"
+
+  KarpenterNodeRoleName:
+    Type: String
+    Description: "IAM role name for Karpenter nodes"
+
+  KataInstanceTypes:
+    Type: String
+    Default: "c6g.metal,m6g.metal"
+    Description: "Comma-separated list of bare metal instance types for Kata"
+
+  KataNodePoolCpuLimit:
+    Type: Number
+    Default: 1000
+    Description: "Total CPU limit for Kata NodePool"
+
+  KataNodePoolMemoryLimit:
+    Type: String
+    Default: "1000Gi"
+    Description: "Total memory limit for Kata NodePool"
+
+  ArtifactBucket:
+    Type: String
+    Description: "S3 bucket for Lambda functions"
+
+Resources:
+  # ================================
+  # Helm Lambda Function (reuse kubectl lambda pattern)
+  # ================================
+  HelmLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: HelmLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                Resource: !Sub "arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${ArtifactBucket}/*"
+
+  HelmLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ClusterName}-helm-installer"
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt HelmLambdaExecutionRole.Arn
+      Timeout: 600
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import subprocess
+          import os
+          import urllib3
+
+          eks_client = boto3.client('eks')
+          http = urllib3.PoolManager()
+
+          def send_response(event, context, status, data=None, reason=None):
+              response_body = {
+                  'Status': status,
+                  'PhysicalResourceId': data.get('PhysicalResourceId', context.log_stream_name) if data else context.log_stream_name,
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': data or {},
+                  'Reason': reason or f"See CloudWatch Log Stream: {context.log_stream_name}"
+              }
+              http.request('PUT', event['ResponseURL'], body=json.dumps(response_body), headers={'Content-Type': 'application/json'})
+
+          def get_kubeconfig(cluster_name):
+              cluster_info = eks_client.describe_cluster(name=cluster_name)['cluster']
+              kubeconfig = {
+                  'apiVersion': 'v1',
+                  'kind': 'Config',
+                  'clusters': [{
+                      'name': cluster_name,
+                      'cluster': {
+                          'server': cluster_info['endpoint'],
+                          'certificate-authority-data': cluster_info['certificateAuthority']['data']
+                      }
+                  }],
+                  'contexts': [{
+                      'name': cluster_name,
+                      'context': {'cluster': cluster_name, 'user': cluster_name}
+                  }],
+                  'current-context': cluster_name,
+                  'users': [{
+                      'name': cluster_name,
+                      'user': {
+                          'exec': {
+                              'apiVersion': 'client.authentication.k8s.io/v1beta1',
+                              'command': 'aws',
+                              'args': ['eks', 'get-token', '--cluster-name', cluster_name, '--region', os.environ['AWS_REGION']]
+                          }
+                      }
+                  }]
+              }
+              return kubeconfig
+
+          def lambda_handler(event, context):
+              try:
+                  request_type = event['RequestType']
+                  props = event['ResourceProperties']
+                  cluster_name = props['ClusterName']
+                  chart_name = props.get('ChartName')
+                  release_name = props.get('ReleaseName')
+                  namespace = props.get('Namespace', 'default')
+                  values_yaml = props.get('ValuesYaml', '')
+
+                  if request_type == 'Delete':
+                      send_response(event, context, 'SUCCESS', {'PhysicalResourceId': release_name})
+                      return
+
+                  # Setup kubeconfig
+                  kubeconfig = get_kubeconfig(cluster_name)
+                  with open('/tmp/kubeconfig', 'w') as f:
+                      json.dump(kubeconfig, f)
+                  os.environ['KUBECONFIG'] = '/tmp/kubeconfig'
+
+                  # Write values
+                  if values_yaml:
+                      with open('/tmp/values.yaml', 'w') as f:
+                          f.write(values_yaml)
+
+                  # Helm install/upgrade
+                  cmd = ['helm', 'upgrade', '--install', release_name, chart_name, '--namespace', namespace, '--create-namespace', '--wait', '--timeout=10m']
+                  if values_yaml:
+                      cmd.extend(['-f', '/tmp/values.yaml'])
+
+                  result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+                  if result.returncode != 0:
+                      raise Exception(f"Helm command failed: {result.stderr}")
+
+                  send_response(event, context, 'SUCCESS', {
+                      'PhysicalResourceId': release_name,
+                      'Output': result.stdout
+                  })
+
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  send_response(event, context, 'FAILED', reason=str(e))
+
+  # ================================
+  # Install Karpenter via Helm
+  # ================================
+  KarpenterHelmRelease:
+    Type: Custom::HelmRelease
+    Properties:
+      ServiceToken: !GetAtt HelmLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      ChartName: oci://public.ecr.aws/karpenter/karpenter
+      ReleaseName: karpenter
+      Namespace: kube-system
+      ValuesYaml: !Sub |
+        serviceAccount:
+          name: karpenter
+          annotations:
+            eks.amazonaws.com/role-arn: ${KarpenterControllerRoleArn}
+        settings:
+          clusterName: ${ClusterName}
+          clusterEndpoint: ${ClusterEndpoint}
+          interruptionQueue: ${ClusterName}
+        controller:
+          resources:
+            requests:
+              cpu: 1
+              memory: 1Gi
+            limits:
+              cpu: 1
+              memory: 1Gi
+        replicas: 2
+
+  # ================================
+  # Pod Identity Association for Karpenter
+  # ================================
+  KarpenterPodIdentityAssociation:
+    Type: AWS::EKS::PodIdentityAssociation
+    DependsOn: KarpenterHelmRelease
+    Properties:
+      ClusterName: !Ref ClusterName
+      Namespace: kube-system
+      ServiceAccount: karpenter
+      RoleArn: !Ref KarpenterControllerRoleArn
+
+  # ================================
+  # kubectl Lambda for applying manifests
+  # ================================
+  KubectlLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ClusterName}-kubectl-karpenter"
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt HelmLambdaExecutionRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import subprocess
+          import os
+          import urllib3
+
+          eks_client = boto3.client('eks')
+          http = urllib3.PoolManager()
+
+          def send_response(event, context, status, data=None, reason=None):
+              response_body = {
+                  'Status': status,
+                  'PhysicalResourceId': data.get('PhysicalResourceId', context.log_stream_name) if data else context.log_stream_name,
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': data or {},
+                  'Reason': reason or f"See CloudWatch Log Stream: {context.log_stream_name}"
+              }
+              http.request('PUT', event['ResponseURL'], body=json.dumps(response_body), headers={'Content-Type': 'application/json'})
+
+          def get_kubeconfig(cluster_name):
+              cluster_info = eks_client.describe_cluster(name=cluster_name)['cluster']
+              kubeconfig = {
+                  'apiVersion': 'v1',
+                  'kind': 'Config',
+                  'clusters': [{
+                      'name': cluster_name,
+                      'cluster': {
+                          'server': cluster_info['endpoint'],
+                          'certificate-authority-data': cluster_info['certificateAuthority']['data']
+                      }
+                  }],
+                  'contexts': [{
+                      'name': cluster_name,
+                      'context': {'cluster': cluster_name, 'user': cluster_name}
+                  }],
+                  'current-context': cluster_name,
+                  'users': [{
+                      'name': cluster_name,
+                      'user': {
+                          'exec': {
+                              'apiVersion': 'client.authentication.k8s.io/v1beta1',
+                              'command': 'aws',
+                              'args': ['eks', 'get-token', '--cluster-name', cluster_name, '--region', os.environ['AWS_REGION']]
+                          }
+                      }
+                  }]
+              }
+              return kubeconfig
+
+          def lambda_handler(event, context):
+              try:
+                  request_type = event['RequestType']
+                  props = event['ResourceProperties']
+                  cluster_name = props['ClusterName']
+                  manifest = props.get('Manifest', '')
+
+                  if request_type == 'Delete':
+                      send_response(event, context, 'SUCCESS', {'PhysicalResourceId': props.get('ResourceName', 'resource')})
+                      return
+
+                  kubeconfig = get_kubeconfig(cluster_name)
+                  with open('/tmp/kubeconfig', 'w') as f:
+                      json.dump(kubeconfig, f)
+                  os.environ['KUBECONFIG'] = '/tmp/kubeconfig'
+
+                  with open('/tmp/manifest.yaml', 'w') as f:
+                      f.write(manifest)
+
+                  result = subprocess.run(['kubectl', 'apply', '-f', '/tmp/manifest.yaml'], capture_output=True, text=True, timeout=60)
+
+                  if result.returncode != 0:
+                      raise Exception(f"kubectl apply failed: {result.stderr}")
+
+                  send_response(event, context, 'SUCCESS', {
+                      'PhysicalResourceId': props.get('ResourceName', 'resource'),
+                      'Output': result.stdout
+                  })
+
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  send_response(event, context, 'FAILED', reason=str(e))
+
+  # ================================
+  # EC2NodeClass: Kata Bare Metal
+  # ================================
+  KataBareMetalNodeClass:
+    Type: Custom::KubectlApply
+    DependsOn: KarpenterHelmRelease
+    Properties:
+      ServiceToken: !GetAtt KubectlLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      ResourceName: ec2nodeclass-kata-bare-metal
+      Manifest: !Sub |
+        apiVersion: karpenter.k8s.aws/v1
+        kind: EC2NodeClass
+        metadata:
+          name: kata-bare-metal
+        spec:
+          amiFamily: AL2023
+          amiSelectorTerms:
+            - alias: al2023@latest
+          role: ${KarpenterNodeRoleName}
+          subnetSelectorTerms:
+            - tags:
+                karpenter.sh/discovery: ${ClusterName}
+          securityGroupSelectorTerms:
+            - tags:
+                karpenter.sh/discovery: ${ClusterName}
+          blockDeviceMappings:
+            - deviceName: /dev/xvda
+              ebs:
+                volumeSize: 200Gi
+                volumeType: gp3
+                encrypted: true
+                deleteOnTermination: true
+          userData: |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="BOUNDARY"
+
+            --BOUNDARY
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            set -ex
+
+            # Log to file for debugging
+            exec > >(tee /var/log/user-data.log) 2>&1
+
+            echo "=== Starting Kata node setup ==="
+
+            # Install required packages
+            dnf install -y mdadm lvm2 device-mapper
+
+            # Find NVMe instance store devices
+            nvme_disks=()
+            for dev in /dev/nvme*n1; do
+                if [ -b "$$$dev" ]; then
+                    # Skip boot disk and already mounted/partitioned disks
+                    if ! lsblk -n -o MOUNTPOINT "$$$dev" | grep -q . && \
+                       ! lsblk -n "$$$dev" | grep -q part && \
+                       ! fuser "$$$dev" 2>/dev/null && \
+                       ! mdadm --examine "$$$dev" 2>/dev/null | grep -q "Magic"; then
+                        echo "Found NVMe device: $$dev"
+                        nvme_disks+=("$$$dev")
+                    fi
+                fi
+            done
+
+            # Setup RAID0 + LVM for containerd devicemapper
+            if [ $${#nvme_disks[@]} -gt 1 ]; then
+                echo "Creating RAID0 array with $${#nvme_disks[@]} disks"
+                mdadm --create --verbose /dev/md0 --level=0 \
+                  --raid-devices=$${#nvme_disks[@]} $${nvme_disks[@]} \
+                  --force --assume-clean
+                sleep 5
+                pvcreate /dev/md0
+                vgcreate vg_raid0 /dev/md0
+                lvcreate -n thinpool_data vg_raid0 -l 90%VG
+                echo "RAID0 + LVM setup complete"
+            elif [ $${#nvme_disks[@]} -eq 1 ]; then
+                echo "Using single NVMe device: $${nvme_disks[0]}"
+                pvcreate $${nvme_disks[0]}
+                vgcreate vg_raid0 $${nvme_disks[0]}
+                lvcreate -n thinpool_data vg_raid0 -l 90%VG
+                echo "LVM setup complete"
+            else
+                echo "No NVMe instance store devices found, using EBS only"
+            fi
+
+            echo "=== Kata node setup complete ==="
+
+            --BOUNDARY
+            Content-Type: application/node.eks.aws
+
+            ---
+            apiVersion: node.eks.aws/v1alpha1
+            kind: NodeConfig
+            spec:
+              cluster:
+                name: ${ClusterName}
+                apiServerEndpoint: ${ClusterEndpoint}
+                certificateAuthority: ${ClusterCA}
+                cidr: ${VpcCidr}
+
+            --BOUNDARY--
+          tags:
+            Name: kata-bare-metal-node
+            KarpenterNodeClass: kata-bare-metal
+            NodeType: kata
+
+  # ================================
+  # EC2NodeClass: Provisioning Graviton
+  # ================================
+  ProvisioningGravitonNodeClass:
+    Type: Custom::KubectlApply
+    DependsOn: KarpenterHelmRelease
+    Properties:
+      ServiceToken: !GetAtt KubectlLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      ResourceName: ec2nodeclass-provisioning-graviton
+      Manifest: !Sub |
+        apiVersion: karpenter.k8s.aws/v1
+        kind: EC2NodeClass
+        metadata:
+          name: provisioning-graviton
+        spec:
+          amiFamily: AL2023
+          amiSelectorTerms:
+            - alias: al2023@latest
+          role: ${KarpenterNodeRoleName}
+          subnetSelectorTerms:
+            - tags:
+                karpenter.sh/discovery: ${ClusterName}
+          securityGroupSelectorTerms:
+            - tags:
+                karpenter.sh/discovery: ${ClusterName}
+          blockDeviceMappings:
+            - deviceName: /dev/xvda
+              ebs:
+                volumeSize: 100Gi
+                volumeType: gp3
+                encrypted: true
+                deleteOnTermination: true
+          tags:
+            Name: provisioning-graviton-node
+            KarpenterNodeClass: provisioning-graviton
+
+  # ================================
+  # NodePool: Kata Bare Metal
+  # ================================
+  KataBareMetalNodePool:
+    Type: Custom::KubectlApply
+    DependsOn: KataBareMetalNodeClass
+    Properties:
+      ServiceToken: !GetAtt KubectlLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      ResourceName: nodepool-kata-bare-metal
+      Manifest: !Sub |
+        apiVersion: karpenter.sh/v1
+        kind: NodePool
+        metadata:
+          name: kata-bare-metal
+        spec:
+          template:
+            metadata:
+              labels:
+                workload-type: kata
+                instance-type: bare-metal
+                katacontainers.io/kata-runtime: "true"
+            spec:
+              nodeClassRef:
+                group: karpenter.k8s.aws
+                kind: EC2NodeClass
+                name: kata-bare-metal
+              taints:
+                - key: kata
+                  value: "true"
+                  effect: NoSchedule
+              requirements:
+                - key: karpenter.sh/capacity-type
+                  operator: In
+                  values: ["on-demand"]
+                - key: kubernetes.io/arch
+                  operator: In
+                  values: ["arm64"]
+                - key: node.kubernetes.io/instance-type
+                  operator: In
+                  values: [${KataInstanceTypes}]
+          limits:
+            cpu: "${KataNodePoolCpuLimit}"
+            memory: ${KataNodePoolMemoryLimit}
+          disruption:
+            consolidationPolicy: WhenEmptyOrUnderutilized
+            consolidateAfter: 1m
+
+  # ================================
+  # NodePool: Provisioning Graviton
+  # ================================
+  ProvisioningGravitonNodePool:
+    Type: Custom::KubectlApply
+    DependsOn: ProvisioningGravitonNodeClass
+    Properties:
+      ServiceToken: !GetAtt KubectlLambdaFunction.Arn
+      ClusterName: !Ref ClusterName
+      ResourceName: nodepool-provisioning-graviton
+      Manifest: !Sub |
+        apiVersion: karpenter.sh/v1
+        kind: NodePool
+        metadata:
+          name: provisioning-graviton
+        spec:
+          template:
+            metadata:
+              labels:
+                workload-type: standard
+                instance-type: graviton
+            spec:
+              nodeClassRef:
+                group: karpenter.k8s.aws
+                kind: EC2NodeClass
+                name: provisioning-graviton
+              requirements:
+                - key: karpenter.sh/capacity-type
+                  operator: In
+                  values: ["on-demand", "spot"]
+                - key: kubernetes.io/arch
+                  operator: In
+                  values: ["arm64"]
+                - key: karpenter.k8s.aws/instance-family
+                  operator: In
+                  values: ["t4g", "c6g", "c7g", "m6g", "m7g"]
+                - key: karpenter.k8s.aws/instance-generation
+                  operator: Gt
+                  values: ["3"]
+          limits:
+            cpu: "1000"
+            memory: 1000Gi
+          disruption:
+            consolidationPolicy: WhenEmptyOrUnderutilized
+            consolidateAfter: 30s
+
+Outputs:
+  KarpenterReleaseName:
+    Description: "Karpenter Helm release name"
+    Value: karpenter
+
+  KataBareMetalNodeClassName:
+    Description: "Kata bare metal EC2NodeClass name"
+    Value: kata-bare-metal
+
+  KataBareMetalNodePoolName:
+    Description: "Kata bare metal NodePool name"
+    Value: kata-bare-metal
+
+  ProvisioningGravitonNodePoolName:
+    Description: "Provisioning Graviton NodePool name"
+    Value: provisioning-graviton

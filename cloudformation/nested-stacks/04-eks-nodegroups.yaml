@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'OpenClaw - EKS Managed Node Groups'
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: "EKS cluster name"
+
+  NodeInstanceType:
+    Type: String
+    Description: "EC2 instance type for nodes"
+
+  NodeDesiredSize:
+    Type: Number
+    Description: "Desired number of nodes"
+
+  NodeMinSize:
+    Type: Number
+    Description: "Minimum number of nodes"
+
+  NodeMaxSize:
+    Type: Number
+    Description: "Maximum number of nodes"
+
+  NodeRoleArn:
+    Type: String
+    Description: "IAM role ARN for EKS nodes"
+
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+    Description: "Comma-separated list of private subnet IDs"
+
+Resources:
+  # Standard Node Group (for controllers and system pods)
+  StandardNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: !Sub "${ClusterName}-standard-nodes"
+      NodeRole: !Ref NodeRoleArn
+      Subnets: !Ref PrivateSubnetIds
+      ScalingConfig:
+        DesiredSize: !Ref NodeDesiredSize
+        MinSize: !Ref NodeMinSize
+        MaxSize: !Ref NodeMaxSize
+      InstanceTypes:
+        - !Ref NodeInstanceType
+      AmiType: AL2023_x86_64_STANDARD
+      DiskSize: 100
+      Labels:
+        role: standard
+        workload: controllers
+      Tags:
+        Name: !Sub "${ClusterName}-standard-node"
+        Environment: !Sub "${ClusterName}"
+      UpdateConfig:
+        MaxUnavailable: 1
+
+Outputs:
+  NodeGroupName:
+    Description: "Node group name"
+    Value: !Ref StandardNodeGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-NodeGroupName"
+
+  NodeGroupArn:
+    Description: "Node group ARN"
+    Value: !GetAtt StandardNodeGroup.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-NodeGroupArn"

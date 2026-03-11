@@ -27,7 +27,7 @@
 | **Node** | ip-172-31-7-197.us-west-2.compute.internal |
 | **Pod Status** | Running (2/2) |
 | **Gateway Endpoint** | openclaw-kata-bedrock.openclaw.svc:18789 |
-| **Model** | bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0 |
+| **Model** | bedrock/us.anthropic.claude-opus-4-6-v1:0 |
 
 ### 关键验证点
 
@@ -61,7 +61,7 @@ ip-172-31-7-197.us-west-2.compute.internal
 #### 4. ✅ OpenClaw 服务运行正常
 
 ```
-[gateway] agent model: amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+[gateway] agent model: amazon-bedrock/us.anthropic.claude-opus-4-6-v1:0
 [gateway] listening on ws://127.0.0.1:18789
 [browser/server] Browser control listening on http://127.0.0.1:18791/
 ```
