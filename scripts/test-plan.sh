@@ -86,7 +86,7 @@ fi
 
 echo ""
 echo "检查 API Gateway..."
-API_ID="0qu1ls4sf5"
+API_ID="xxxxxxxxxx"
 if aws apigatewayv2 get-api --api-id $API_ID --region us-west-2 &> /dev/null; then
     print_success "API Gateway 已存在: $API_ID"
 else
@@ -183,7 +183,7 @@ kubectl get deployment openclaw-provisioning -n openclaw-provisioning \
 
 echo ""
 echo "准备构建新镜像..."
-echo "  镜像: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest"
+echo "  镜像: 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest"
 echo ""
 read -p "请在远程机器上构建并推送镜像，完成后按 Enter 继续..." DUMMY
 
@@ -223,7 +223,7 @@ print_success "JWT token 获取成功"
 echo ""
 echo "创建 OpenClaw instance..."
 RESPONSE=$(curl -s -X POST \
-  "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/provision" \
+  "https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/provision" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{}')
@@ -285,7 +285,7 @@ pause
 print_header "阶段 6: 配置 API Gateway 路由"
 
 echo "检查是否已存在 OpenClaw 路由..."
-EXISTING_ROUTE=$(aws apigatewayv2 get-routes --api-id 0qu1ls4sf5 --region us-west-2 \
+EXISTING_ROUTE=$(aws apigatewayv2 get-routes --api-id xxxxxxxxxx --region us-west-2 \
     --query 'Items[?contains(RouteKey, `instance`)].RouteId' --output text)
 
 if [ -n "$EXISTING_ROUTE" ]; then
@@ -293,7 +293,7 @@ if [ -n "$EXISTING_ROUTE" ]; then
     read -p "是否重新创建？(y/N): " RECREATE
     if [[ $RECREATE =~ ^[Yy]$ ]]; then
         echo "删除现有路由..."
-        aws apigatewayv2 delete-route --api-id 0qu1ls4sf5 --region us-west-2 --route-id $EXISTING_ROUTE
+        aws apigatewayv2 delete-route --api-id xxxxxxxxxx --region us-west-2 --route-id $EXISTING_ROUTE
         print_success "路由已删除"
     else
         print_warning "跳过 API Gateway 配置"
@@ -319,14 +319,14 @@ print_header "阶段 7: 测试访问"
 
 echo "测试 1: 验证 API Gateway 路由配置"
 echo "-------------------------------------"
-aws apigatewayv2 get-routes --api-id 0qu1ls4sf5 --region us-west-2 \
+aws apigatewayv2 get-routes --api-id xxxxxxxxxx --region us-west-2 \
     --query 'Items[?contains(RouteKey, `instance`)].{RouteKey:RouteKey,Target:Target}' \
     --output table
 
 echo ""
 echo "测试 2: 通过 API Gateway 访问 OpenClaw"
 echo "-------------------------------------"
-API_GATEWAY_URL="https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/$USER_ID/"
+API_GATEWAY_URL="https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/instance/$USER_ID/"
 echo "URL: $API_GATEWAY_URL"
 echo ""
 
@@ -362,7 +362,7 @@ fi
 echo ""
 echo "测试 3: 通过 Dashboard 测试"
 echo "-------------------------------------"
-echo "1. 访问: https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/dashboard"
+echo "1. 访问: https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/dashboard"
 echo "2. 登录: testuser@example.com / TestPass123!"
 echo "3. 点击 'Connect to Gateway' 按钮"
 echo "4. 观察是否能打开新标签访问 OpenClaw"
@@ -373,7 +373,7 @@ echo ""
 echo "测试 4: 验证 status API 返回"
 echo "-------------------------------------"
 curl -s -H "Authorization: Bearer $TOKEN" \
-    "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/status/$USER_ID" | \
+    "https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/status/$USER_ID" | \
     jq '{user_id, status, api_gateway_url, gateway_endpoint}'
 
 # ========================================
@@ -401,7 +401,7 @@ kubectl get pods -n openclaw-$USER_ID 2>/dev/null || echo "    N/A"
 
 echo ""
 echo "API Gateway 路由:"
-aws apigatewayv2 get-routes --api-id 0qu1ls4sf5 --region us-west-2 \
+aws apigatewayv2 get-routes --api-id xxxxxxxxxx --region us-west-2 \
     --query 'Items[?contains(RouteKey, `instance`)].RouteKey' \
     --output text
 
@@ -411,5 +411,5 @@ echo ""
 echo "下一步:"
 echo "  1. 如果所有测试通过，可以开始创建更多 instances"
 echo "  2. 监控 ALB 健康状态: kubectl describe ingress -n openclaw-$USER_ID"
-echo "  3. 查看 API Gateway 日志: aws logs tail /aws/apigateway/0qu1ls4sf5 --follow"
+echo "  3. 查看 API Gateway 日志: aws logs tail /aws/apigateway/xxxxxxxxxx --follow"
 echo "  4. 清理测试资源: kubectl delete openclawinstance openclaw-$USER_ID -n openclaw-$USER_ID"

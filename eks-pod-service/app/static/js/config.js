@@ -1,10 +1,12 @@
 // Configuration
+// Values are injected at build/deploy time or loaded from /api/config endpoint.
+// DO NOT hardcode real resource IDs here.
 const CONFIG = {
     // Cognito Configuration
     COGNITO: {
-        REGION: 'us-west-2',
-        USER_POOL_ID: 'us-west-2_gvOCTiLQE',
-        CLIENT_ID: '7hu644gbgodv2bap8cq6eb02n7',  // No client secret (2026-03-03)
+        REGION: window.__ENV__?.COGNITO_REGION || 'us-west-2',
+        USER_POOL_ID: window.__ENV__?.COGNITO_USER_POOL_ID || '',
+        CLIENT_ID: window.__ENV__?.COGNITO_CLIENT_ID || '',
         // Cognito domain (if using Hosted UI, otherwise we use AWS SDK directly)
         DOMAIN: null
     },
@@ -12,7 +14,7 @@ const CONFIG = {
     // API Configuration
     API: {
         // When running through API Gateway
-        GATEWAY_ENDPOINT: 'https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod',
+        GATEWAY_ENDPOINT: window.__ENV__?.API_GATEWAY_ENDPOINT || '',
 
         // When accessing service directly (for development)
         // Will auto-detect based on current location

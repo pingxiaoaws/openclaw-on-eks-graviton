@@ -5,7 +5,7 @@ set -e
 
 # 配置
 AWS_REGION="us-west-2"
-AWS_ACCOUNT_ID="970547376847"
+AWS_ACCOUNT_ID="111122223333"
 ECR_REPO="openclaw-provisioning"
 IMAGE_TAG="latest"
 CLUSTER_NAME="test-s4"

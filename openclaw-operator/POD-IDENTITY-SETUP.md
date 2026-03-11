@@ -147,7 +147,7 @@ aws iam create-role \
 # 3. Attach Policy to Role
 aws iam attach-role-policy \
   --role-name OpenClawProvisioningServiceRole \
-  --policy-arn arn:aws:iam::970547376847:policy/OpenClawProvisioningServicePolicy \
+  --policy-arn arn:aws:iam::111122223333:policy/OpenClawProvisioningServicePolicy \
   --region us-west-2
 ```
 
@@ -158,7 +158,7 @@ aws eks create-pod-identity-association \
   --cluster-name test-s4 \
   --namespace openclaw-provisioning \
   --service-account openclaw-provisioner \
-  --role-arn arn:aws:iam::970547376847:role/OpenClawProvisioningServiceRole \
+  --role-arn arn:aws:iam::111122223333:role/OpenClawProvisioningServiceRole \
   --region us-west-2
 ```
 
@@ -169,8 +169,8 @@ aws eks create-pod-identity-association \
     "clusterName": "test-s4",
     "namespace": "openclaw-provisioning",
     "serviceAccount": "openclaw-provisioner",
-    "roleArn": "arn:aws:iam::970547376847:role/OpenClawProvisioningServiceRole",
-    "associationArn": "arn:aws:eks:us-west-2:970547376847:podidentityassociation/test-s4/...",
+    "roleArn": "arn:aws:iam::111122223333:role/OpenClawProvisioningServiceRole",
+    "associationArn": "arn:aws:eks:us-west-2:111122223333:podidentityassociation/test-s4/...",
     "associationId": "a-xxxxx",
     "createdAt": "2026-03-03T03:00:00.000Z"
   }
@@ -188,7 +188,7 @@ metadata:
   name: openclaw-provisioner
   namespace: openclaw-provisioning
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::970547376847:role/OpenClawProvisioningServiceRole
+    eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/OpenClawProvisioningServiceRole
 ```
 
 ### Step 4: 重启Provisioning Service以加载凭证

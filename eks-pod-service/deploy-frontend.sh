@@ -3,7 +3,7 @@
 set -e
 
 REGION="us-west-2"
-ACCOUNT_ID="970547376847"
+ACCOUNT_ID="111122223333"
 REPO_NAME="openclaw-provisioning"
 IMAGE_TAG="latest"
 NAMESPACE="openclaw-provisioning"

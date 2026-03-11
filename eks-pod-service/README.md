@@ -153,7 +153,7 @@ cd /Users/pingxiao/aws-workspace/kata-open-claw/open-claw-operator-on-EKS-kata/e
 
 # 登录 ECR
 aws ecr get-login-password --region us-west-2 | \
-  docker login --username AWS --password-stdin 970547376847.dkr.ecr.us-west-2.amazonaws.com
+  docker login --username AWS --password-stdin 111122223333.dkr.ecr.us-west-2.amazonaws.com
 
 # 创建 ECR 仓库
 aws ecr create-repository \
@@ -162,14 +162,14 @@ aws ecr create-repository \
 
 # 构建镜像（多架构）
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest \
+  -t 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest \
   --push .
 
 # 或单架构构建
 docker build -t openclaw-provisioning .
 docker tag openclaw-provisioning:latest \
-  970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
-docker push 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+  111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+docker push 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
 ```
 
 ### 步骤 2: 更新部署配置
@@ -177,7 +177,7 @@ docker push 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:l
 编辑 `kubernetes/deployment.yaml`，替换镜像地址：
 
 ```yaml
-image: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+image: 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
 ```
 
 ### 步骤 3: 部署到 EKS
@@ -323,7 +323,7 @@ OPENCLAW_DEFAULTS = {
     },
     'storage_size': '10Gi',
     'storage_class': 'gp3',
-    'model': 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'
+    'model': 'bedrock/us.anthropic.claude-opus-4-6-v1:0'
 }
 ```
 

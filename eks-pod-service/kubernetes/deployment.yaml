@@ -25,8 +25,7 @@ spec:
     spec:
       serviceAccountName: openclaw-provisioner
       nodeSelector:
-        workload-type: provisioning
-        arch: arm64
+        # arch: arm64
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
@@ -43,12 +42,15 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
       - name: provisioning
-        image: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+        image: ${ECR_REGISTRY}/openclaw-provisioning:latest  # Replace at deploy time or use kustomize
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
           name: http
           protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: openclaw-provisioning-env
         env:
         - name: LOG_LEVEL
           value: "INFO"
@@ -64,12 +66,6 @@ spec:
           value: "true"
         - name: CREATE_IAM_ROLE_PER_USER
           value: "false"
-        - name: SHARED_BEDROCK_ROLE_ARN
-          value: "arn:aws:iam::970547376847:role/openclaw-bedrock-shared"
-        - name: EKS_CLUSTER_NAME
-          value: "test-s4"
-        - name: AWS_REGION
-          value: "us-west-2"
         # OpenClaw Instance 配置
         # - name: OPENCLAW_RUNTIME_CLASS
         #   value: "kata-fc"  # 留空使用 runc
@@ -90,7 +86,7 @@ spec:
         - name: OPENCLAW_STORAGE_CLASS
           value: "gp3"
         - name: OPENCLAW_MODEL
-          value: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+          value: "bedrock/us.anthropic.claude-opus-4-6-v1:0"
         - name: OPENCLAW_AWS_CREDENTIALS_SECRET
           value: "aws-credentials"
         resources:

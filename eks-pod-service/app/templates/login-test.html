@@ -14,9 +14,10 @@
     <pre id="result"></pre>
 
     <script>
+        // These values should be injected by the server template or loaded from /api/config
         const poolData = {
-            UserPoolId: 'us-west-2_gvOCTiLQE',
-            ClientId: '7hu644gbgodv2bap8cq6eb02n7'
+            UserPoolId: '{{ cognito_user_pool_id }}',
+            ClientId: '{{ cognito_client_id }}'
         };
         
         const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);

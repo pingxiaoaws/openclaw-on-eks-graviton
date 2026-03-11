@@ -36,10 +36,10 @@ env:
   value: "true"  # 启用 Public ALB 模式
 
 - name: CLOUDFRONT_DOMAIN
-  value: "d3ik6njnl847zd.cloudfront.net"
+  value: "dxxxexample.cloudfront.net"
 
 - name: CLOUDFRONT_DISTRIBUTION_ID
-  value: "E30KMUI0GGXXLY"
+  value: "EXXXXXXXXXXXXX"
 
 - name: PUBLIC_ALB_DNS
   value: "k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com"
@@ -58,7 +58,7 @@ env:
 - 每个 OpenClawInstance 自动配置 `spec.config.raw.gateway.allowedOrigins` 包含 CloudFront 域名
 - 每个 OpenClawInstance 自动配置 `spec.config.raw.gateway.trustedProxies`
 - Ingress 使用 Internet-Facing ALB + 完整的 4 AZ 子网配置
-- 通过 `https://d3ik6njnl847zd.cloudfront.net/instance/{user_id}/` 访问
+- 通过 `https://dxxxexample.cloudfront.net/instance/{user_id}/` 访问
 
 #### Gateway 配置自动注入
 
@@ -70,7 +70,7 @@ config_raw = {
     "gateway": {
         "controlUi": {
             "allowedOrigins": [
-                "https://d3ik6njnl847zd.cloudfront.net",
+                "https://dxxxexample.cloudfront.net",
                 "http://k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com",
                 "https://k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com"
             ]
@@ -91,7 +91,7 @@ kubectl get openclawinstance openclaw-{user_id} -n openclaw-{user_id} -o yaml | 
 #   gateway:
 #     controlUi:
 #       allowedOrigins:
-#         - https://d3ik6njnl847zd.cloudfront.net
+#         - https://dxxxexample.cloudfront.net
 #         - ...
 #     trustedProxies:
 #       - 0.0.0.0/0
@@ -114,7 +114,7 @@ annotations = {
 }
 
 hosts = [{
-    "host": "d3ik6njnl847zd.cloudfront.net",
+    "host": "dxxxexample.cloudfront.net",
     "paths": [{
         "path": f"/instance/{user_id}",
         "pathType": "Prefix"
@@ -131,7 +131,7 @@ kubectl get ingress -n openclaw-{user_id} openclaw-{user_id} -o yaml
 # 确认:
 # 1. annotations 包含 scheme=internet-facing
 # 2. annotations 包含正确的 4 AZ subnets
-# 3. hosts[0].host = d3ik6njnl847zd.cloudfront.net
+# 3. hosts[0].host = dxxxexample.cloudfront.net
 # 4. ALB 地址匹配 k8s-openclawsharedins-df8a132590-...
 ```
 
@@ -199,7 +199,7 @@ kubectl get ingress -n openclaw-{user_id} openclaw-{user_id} -o yaml
 # 1. 获取 JWT token
 TOKEN=$(aws cognito-idp initiate-auth \
   --auth-flow USER_PASSWORD_AUTH \
-  --client-id f5qd2udi8508dd132d72qn7uc \
+  --client-id xxxxxxxxxxxxxxxxxxxxxxxxxx \
   --auth-parameters USERNAME=<email>,PASSWORD=<password> \
   --region us-west-2 \
   --query 'AuthenticationResult.IdToken' \
@@ -209,7 +209,7 @@ TOKEN=$(aws cognito-idp initiate-auth \
 kubectl logs -n openclaw-{user_id} openclaw-{user_id}-0 -c openclaw | grep "pairing request"
 
 # 3. 批准设备
-curl -X POST https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/devices/approve \
+curl -X POST https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/api/devices/approve \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -218,7 +218,7 @@ curl -X POST https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/dev
   }'
 
 # 4. 列出设备
-curl -X GET "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/devices/list?user_id=7ec7606c" \
+curl -X GET "https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/api/devices/list?user_id=7ec7606c" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -226,13 +226,13 @@ curl -X GET "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/dev
 
 ```javascript
 // 自动 device pairing 流程
-const ws = new WebSocket('wss://d3ik6njnl847zd.cloudfront.net/instance/416e0b5f?token=xxx');
+const ws = new WebSocket('wss://dxxxexample.cloudfront.net/instance/416e0b5f?token=xxx');
 
 ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === 'pairing_required') {
         // 自动调用后端 API 批准
-        fetch('https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/devices/approve', {
+        fetch('https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/api/devices/approve', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -309,16 +309,16 @@ cd /Users/pingxiao/aws-workspace/kata-open-claw/open-claw-operator-on-EKS-kata/e
 # Login to ECR
 aws ecr get-login-password --region us-west-2 | \
   docker login --username AWS --password-stdin \
-  970547376847.dkr.ecr.us-west-2.amazonaws.com
+  111122223333.dkr.ecr.us-west-2.amazonaws.com
 
 # Build multi-arch image (支持 ARM64 + AMD64)
 docker buildx build --platform linux/arm64,linux/amd64 \
-  -t 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest \
+  -t 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest \
   --push .
 
 # 或仅 ARM64 (如果集群只有 Graviton 节点)
-docker build -t 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
-docker push 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+docker build -t 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
+docker push 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
 ```
 
 ### 3. 更新 Deployment 环境变量 (可选)
@@ -338,7 +338,7 @@ spec:
         - name: USE_PUBLIC_ALB
           value: "true"
         - name: CLOUDFRONT_DOMAIN
-          value: "d3ik6njnl847zd.cloudfront.net"
+          value: "dxxxexample.cloudfront.net"
         - name: PUBLIC_ALB_DNS
           value: "k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com"
         # ... 其他配置
@@ -363,7 +363,7 @@ kubectl logs -n openclaw-provisioning deployment/openclaw-provisioning -f | grep
 
 ```bash
 # 创建测试实例
-curl -X POST https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/provision \
+curl -X POST https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/provision \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json"
 
@@ -387,7 +387,7 @@ kubectl get ingress -n openclaw-{user_id} openclaw-{user_id} \
 
 ```bash
 # 测试批准设备 (替换为实际的 request_id)
-curl -X POST https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/devices/approve \
+curl -X POST https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/api/devices/approve \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -396,7 +396,7 @@ curl -X POST https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/dev
   }'
 
 # 测试列出设备
-curl -X GET "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/devices/list" \
+curl -X GET "https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/api/devices/list" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -404,7 +404,7 @@ curl -X GET "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/api/dev
 
 ```bash
 # 使用 wscat 测试 CloudFront endpoint
-wscat -c "wss://d3ik6njnl847zd.cloudfront.net/instance/{user_id}?token=xxx"
+wscat -c "wss://dxxxexample.cloudfront.net/instance/{user_id}?token=xxx"
 
 # 或使用 HTML 测试页面
 # 创建 test.html 包含 WebSocket 连接代码
@@ -547,7 +547,7 @@ env:
 - 相关部署文档: `../CLOUDFRONT-DEPLOYMENT-COMPLETE.md`
 - 正确的 WebSocket 配置: `../CLOUDFRONT-WEBSOCKET-CORRECT-OPTIONS.md`
 - Device Pairing 解决方案: `../PAIRING-SOLUTION.md`
-- CloudFront Distribution ID: `E30KMUI0GGXXLY`
+- CloudFront Distribution ID: `EXXXXXXXXXXXXX`
 - Public ALB: `k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com`
 
 ---

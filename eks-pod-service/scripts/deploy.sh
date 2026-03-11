@@ -53,7 +53,7 @@ OPERATOR_NAMESPACE="openclaw-operator-system"
 PROVISIONING_NAMESPACE="openclaw-provisioning"
 
 # Image names
-ECR_REGISTRY="970547376847.dkr.ecr.${AWS_REGION}.amazonaws.com"
+ECR_REGISTRY="111122223333.dkr.ecr.${AWS_REGION}.amazonaws.com"
 PROVISIONING_IMAGE="${ECR_REGISTRY}/openclaw-provisioning:latest"
 
 # Colors for output

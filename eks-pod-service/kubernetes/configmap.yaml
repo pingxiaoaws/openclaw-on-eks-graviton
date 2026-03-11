@@ -1,0 +1,26 @@
+---
+# ConfigMap for OpenClaw Provisioning Service
+# Generate from .env:
+#   source .env && envsubst < kubernetes/configmap.yaml | kubectl apply -f -
+# Or create directly:
+#   kubectl create configmap openclaw-provisioning-env --from-env-file=../../.env -n openclaw-provisioning
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openclaw-provisioning-env
+  namespace: openclaw-provisioning
+  labels:
+    app: openclaw-provisioning
+data:
+  AWS_REGION: "${AWS_REGION}"
+  AWS_ACCOUNT_ID: "${AWS_ACCOUNT_ID}"
+  EKS_CLUSTER_NAME: "${EKS_CLUSTER_NAME}"
+  SHARED_BEDROCK_ROLE_ARN: "${SHARED_BEDROCK_ROLE_ARN}"
+  COGNITO_REGION: "${AWS_REGION}"
+  COGNITO_USER_POOL_ID: "${COGNITO_USER_POOL_ID}"
+  COGNITO_CLIENT_ID: "${COGNITO_CLIENT_ID}"
+  API_GATEWAY_ENDPOINT: "${API_GATEWAY_ENDPOINT}"
+  CLOUDFRONT_DOMAIN: "${CLOUDFRONT_DOMAIN}"
+  CLOUDFRONT_DISTRIBUTION_ID: "${CLOUDFRONT_DISTRIBUTION_ID}"
+  PUBLIC_ALB_SUBNETS: "${PUBLIC_ALB_SUBNETS}"
+  PUBLIC_ALB_DNS: "${PUBLIC_ALB_DNS}"

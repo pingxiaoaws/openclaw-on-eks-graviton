@@ -18,8 +18,8 @@
 ## 已完成配置
 
 ### ✅ AWS 资源
-- **AWS Account ID**: `970547376847`
-- **Cognito User Pool**: `us-west-2_gvOCTiLQE`
+- **AWS Account ID**: `111122223333`
+- **Cognito User Pool**: `us-west-2_ExAmPlE`
 - **Cognito Client ID**: `62csdgbfh62kqtekbhjpqhmlta`
 - **Cognito Domain**: `openclaw-auth.auth.us-west-2.amazoncognito.com` ✨
 
@@ -61,7 +61,7 @@ ALB_DNS=$(kubectl get ingress -A -l alb.ingress.kubernetes.io/group.name=opencla
 
 # 更新 Cognito App Client 回调 URL
 aws cognito-idp update-user-pool-client \
-  --user-pool-id us-west-2_gvOCTiLQE \
+  --user-pool-id us-west-2_ExAmPlE \
   --client-id 62csdgbfh62kqtekbhjpqhmlta \
   --region us-west-2 \
   --callback-urls "[\"https://openclaw.yourdomain.com/oauth2/idpresponse\"]" \
@@ -78,23 +78,23 @@ aws cognito-idp update-user-pool-client \
 env:
 # 现有配置...
 - name: AWS_ACCOUNT_ID
-  value: "970547376847"
+  value: "111122223333"
 - name: COGNITO_USER_POOL_DOMAIN
   value: "openclaw-auth.auth.us-west-2.amazoncognito.com"
 - name: INGRESS_HOST
   value: "openclaw.yourdomain.com"  # 替换为你的域名
 - name: INGRESS_CERTIFICATE_ARN
-  value: "arn:aws:acm:us-west-2:970547376847:certificate/YOUR-CERT-ID"  # 替换为你的证书 ARN
+  value: "arn:aws:acm:us-west-2:111122223333:certificate/YOUR-CERT-ID"  # 替换为你的证书 ARN
 ```
 
 或者使用 kubectl：
 
 ```bash
 kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
-  AWS_ACCOUNT_ID=970547376847 \
+  AWS_ACCOUNT_ID=111122223333 \
   COGNITO_USER_POOL_DOMAIN=openclaw-auth.auth.us-west-2.amazoncognito.com \
   INGRESS_HOST=openclaw.yourdomain.com \
-  INGRESS_CERTIFICATE_ARN=arn:aws:acm:us-west-2:970547376847:certificate/YOUR-CERT-ID
+  INGRESS_CERTIFICATE_ARN=arn:aws:acm:us-west-2:111122223333:certificate/YOUR-CERT-ID
 
 kubectl rollout restart deployment/openclaw-provisioning -n openclaw-provisioning
 ```
@@ -113,8 +113,8 @@ make deploy
 
 # 2. 构建并推送新镜像
 cd /Users/pingxiao/aws-workspace/kata-open-claw/open-claw-operator-on-EKS-kata/eks-pod-service
-docker build -t 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
-docker push 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
+docker build -t 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest .
+docker push 111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning:latest
 
 # 3. 重启 deployment
 kubectl rollout restart deployment/openclaw-provisioning -n openclaw-provisioning
@@ -122,7 +122,7 @@ kubectl rollout restart deployment/openclaw-provisioning -n openclaw-provisionin
 
 ### 2. 创建测试 Instance
 
-访问：https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/dashboard
+访问：https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/dashboard
 
 点击 "Create OpenClaw Instance"
 
@@ -217,7 +217,7 @@ kubectl describe ingress -n openclaw-$USER_ID openclaw-$USER_ID
 ```bash
 # 检查回调 URL 配置
 aws cognito-idp describe-user-pool-client \
-  --user-pool-id us-west-2_gvOCTiLQE \
+  --user-pool-id us-west-2_ExAmPlE \
   --client-id 62csdgbfh62kqtekbhjpqhmlta \
   --region us-west-2 \
   --query 'UserPoolClient.CallbackURLs'

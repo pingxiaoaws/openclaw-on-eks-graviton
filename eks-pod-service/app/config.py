@@ -39,7 +39,7 @@ class Config:
         },
         'storage_size': os.environ.get('OPENCLAW_STORAGE_SIZE', '10Gi'),
         'storage_class': os.environ.get('OPENCLAW_STORAGE_CLASS', 'efs-sc'),
-        'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'),
+        'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-opus-4-6-v1:0'),
         'aws_credentials_secret': os.environ.get('OPENCLAW_AWS_CREDENTIALS_SECRET', 'aws-credentials')
     }
 
@@ -75,10 +75,7 @@ class Config:
     USE_POD_IDENTITY = os.environ.get('USE_POD_IDENTITY', 'true').lower() == 'true'
 
     # Pod Identity 共享 Role 配置
-    SHARED_BEDROCK_ROLE_ARN = os.environ.get(
-        'SHARED_BEDROCK_ROLE_ARN',
-        'arn:aws:iam::970547376847:role/openclaw-bedrock-shared'
-    )
+    SHARED_BEDROCK_ROLE_ARN = os.environ.get('SHARED_BEDROCK_ROLE_ARN', '')
 
     # 是否为每个用户创建独立 IAM Role（设为 False 使用共享 Role）
     CREATE_IAM_ROLE_PER_USER = os.environ.get(
@@ -88,8 +85,8 @@ class Config:
 
     # Cognito JWT 验证配置
     COGNITO_REGION = os.environ.get('COGNITO_REGION', 'us-west-2')
-    COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', 'us-west-2_gvOCTiLQE')
-    COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', '7hu644gbgodv2bap8cq6eb02n7')  # No secret
+    COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', '')
+    COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', '')  # No secret
     COGNITO_USER_POOL_DOMAIN = os.environ.get('COGNITO_USER_POOL_DOMAIN', '')  # e.g., your-domain.auth.us-west-2.amazoncognito.com
 
     # Ingress 配置（Internal ALB + API Gateway）
@@ -100,27 +97,24 @@ class Config:
     INGRESS_TARGET_TYPE = os.environ.get('INGRESS_TARGET_TYPE', 'ip')  # IP mode for better performance
 
     # API Gateway 配置（用于构建外部访问 URL）
-    API_GATEWAY_ENDPOINT = os.environ.get('API_GATEWAY_ENDPOINT', 'https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com')
+    API_GATEWAY_ENDPOINT = os.environ.get('API_GATEWAY_ENDPOINT', '')
     API_GATEWAY_STAGE = os.environ.get('API_GATEWAY_STAGE', 'prod')
 
     # CloudFront + Public ALB 配置（最终生产方案）
-    CLOUDFRONT_DOMAIN = os.environ.get('CLOUDFRONT_DOMAIN', 'd3ik6njnl847zd.cloudfront.net')
-    CLOUDFRONT_DISTRIBUTION_ID = os.environ.get('CLOUDFRONT_DISTRIBUTION_ID', 'E30KMUI0GGXXLY')
-    PUBLIC_ALB_DNS = os.environ.get('PUBLIC_ALB_DNS', 'k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com')
+    CLOUDFRONT_DOMAIN = os.environ.get('CLOUDFRONT_DOMAIN', '')
+    CLOUDFRONT_DISTRIBUTION_ID = os.environ.get('CLOUDFRONT_DISTRIBUTION_ID', '')
+    PUBLIC_ALB_DNS = os.environ.get('PUBLIC_ALB_DNS', '')
     PUBLIC_ALB_GROUP_NAME = os.environ.get('PUBLIC_ALB_GROUP_NAME', 'openclaw-shared-instances')
 
     # Public ALB 子网配置（4 AZs: us-west-2a/b/c/d）
-    PUBLIC_ALB_SUBNETS = os.environ.get(
-        'PUBLIC_ALB_SUBNETS',
-        'subnet-08a07253e176e1909,subnet-05abc2d68c50fd8ae,subnet-0ddf028eca68fffa2,subnet-0ab9282c748d87511'
-    )
+    PUBLIC_ALB_SUBNETS = os.environ.get('PUBLIC_ALB_SUBNETS', '')
 
     # Gateway 配置（allowedOrigins + trustedProxies）
     GATEWAY_CONFIG = {
         "allowedOrigins": [
-            f"https://{os.environ.get('CLOUDFRONT_DOMAIN', 'd3ik6njnl847zd.cloudfront.net')}",
-            f"http://{os.environ.get('PUBLIC_ALB_DNS', 'k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com')}",
-            f"https://{os.environ.get('PUBLIC_ALB_DNS', 'k8s-openclawsharedins-df8a132590-1940875357.us-west-2.elb.amazonaws.com')}"
+            f"https://{os.environ.get('CLOUDFRONT_DOMAIN', '')}",
+            f"http://{os.environ.get('PUBLIC_ALB_DNS', '')}",
+            f"https://{os.environ.get('PUBLIC_ALB_DNS', '')}"
         ],
         "trustedProxies": [os.environ.get('GATEWAY_TRUSTED_PROXIES', '0.0.0.0/0')]  # 生产环境改为 VPC CIDR 或 CloudFront IP ranges
     }
@@ -130,10 +124,7 @@ class Config:
         "alb.ingress.kubernetes.io/scheme": "internet-facing",
         "alb.ingress.kubernetes.io/target-type": "ip",
         "alb.ingress.kubernetes.io/group.name": os.environ.get('PUBLIC_ALB_GROUP_NAME', 'openclaw-shared-instances'),
-        "alb.ingress.kubernetes.io/subnets": os.environ.get(
-            'PUBLIC_ALB_SUBNETS',
-            'subnet-08a07253e176e1909,subnet-05abc2d68c50fd8ae,subnet-0ddf028eca68fffa2,subnet-0ab9282c748d87511'
-        ),
+        "alb.ingress.kubernetes.io/subnets": os.environ.get('PUBLIC_ALB_SUBNETS', ''),
         "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
         "alb.ingress.kubernetes.io/success-codes": "200,404",
         "alb.ingress.kubernetes.io/target-group-attributes": (

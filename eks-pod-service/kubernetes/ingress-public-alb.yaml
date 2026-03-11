@@ -1,0 +1,123 @@
+---
+# Public ALB Ingress - 共享 OpenClaw instances ALB
+# 用于 CloudFront 集成，处理 Provisioning Service 路由
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openclaw-provisioning-public
+  namespace: openclaw-provisioning
+  annotations:
+    # ALB 配置 - 共享现有 ALB
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: openclaw-shared-instances  # 关键：共享 ALB group
+
+    # 子网配置 - 4 AZ 公有子网（与 instances ALB 相同）
+    # Replace with your actual public subnet IDs from .env (PUBLIC_ALB_SUBNETS)
+    alb.ingress.kubernetes.io/subnets: "${PUBLIC_ALB_SUBNETS}"
+
+    # 健康检查
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '30'
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/success-codes: "200"
+
+    # Target Group 属性 - 会话保持 + LOR 算法
+    alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true,stickiness.type=lb_cookie,stickiness.lb_cookie.duration_seconds=3600,deregistration_delay.timeout_seconds=60,load_balancing.algorithm.type=least_outstanding_requests
+
+    # 监听器配置
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+
+    # 标签
+    alb.ingress.kubernetes.io/tags: Environment=test,Application=openclaw-provisioning,ManagedBy=cloudfront
+
+  labels:
+    app: openclaw-provisioning
+    alb-group: openclaw-shared-instances
+spec:
+  ingressClassName: alb
+  rules:
+  # CloudFront domain - Replace with your actual domain from .env (CLOUDFRONT_DOMAIN)
+  - host: "${CLOUDFRONT_DOMAIN}"
+    http:
+      paths:
+      # 1. 登录页面
+      - path: /login
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+
+      # 2. Dashboard
+      - path: /dashboard
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+
+      # 3. 静态资源
+      - path: /static
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+
+      # 4. API 端点
+      - path: /provision
+        pathType: Exact
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+
+      - path: /status
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+
+      - path: /delete
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+
+      # 5. 健康检查
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+
+      # 6. 根路径（可选，重定向到 /login）
+      - path: /
+        pathType: Exact
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80

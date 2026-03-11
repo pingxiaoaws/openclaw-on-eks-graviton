@@ -9,8 +9,8 @@ REMOTE_HOST="44.252.48.166"
 REMOTE_USER="ec2-user"
 SSH_KEY="/Users/pingxiao/.ssh/pingec2.key"
 REMOTE_REPO="/home/ec2-user/openclaw-on-eks-graviton"
-ECR_REPO="970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning"
-API_ID="0qu1ls4sf5"
+ECR_REPO="111122223333.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning"
+API_ID="xxxxxxxxxx"
 VPC_LINK_ID="kn1heg"
 REGION="us-west-2"
 
@@ -179,7 +179,7 @@ print_success "JWT token obtained"
 echo ""
 echo "Creating OpenClaw instance..."
 RESPONSE=$(curl -s -X POST \
-    "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/provision" \
+    "https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/provision" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{}')
@@ -323,7 +323,7 @@ aws apigatewayv2 get-routes --api-id "$API_ID" --region "$REGION" \
 # ========================================
 print_header "Stage 7: Access Tests"
 
-API_GATEWAY_URL="https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/instance/$USER_ID/"
+API_GATEWAY_URL="https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/instance/$USER_ID/"
 
 echo "Test 7.1: curl access test"
 echo "URL: $API_GATEWAY_URL"
@@ -363,7 +363,7 @@ echo ""
 echo "Test 7.2: status API test"
 echo "--------------------------------------"
 STATUS_RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" \
-    "https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/status/$USER_ID")
+    "https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/status/$USER_ID")
 
 echo "$STATUS_RESPONSE" | jq '{user_id, status, api_gateway_url, gateway_endpoint}'
 
@@ -413,7 +413,7 @@ echo ""
 print_success "Automated test completed!"
 echo ""
 echo "Next steps:"
-echo "  1. Test in browser: https://0qu1ls4sf5.execute-api.us-west-2.amazonaws.com/prod/dashboard"
+echo "  1. Test in browser: https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/prod/dashboard"
 echo "  2. Login: testuser@example.com / TestPass123!"
 echo "  3. Click 'Connect to Gateway' button"
 echo "  4. Get gateway_token: kubectl get secret openclaw-$USER_ID-gateway-token -n openclaw-$USER_ID -o jsonpath='{.data.token}' | base64 -d"
