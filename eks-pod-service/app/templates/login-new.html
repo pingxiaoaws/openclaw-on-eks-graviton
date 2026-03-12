@@ -346,6 +346,15 @@
             }
         }
     </style>
+
+    <!-- Environment Configuration (injected by Flask) -->
+    <script>
+        window.__ENV__ = {
+            COGNITO_REGION: '{{ cognito.region }}',
+            COGNITO_USER_POOL_ID: '{{ cognito.userPoolId }}',
+            COGNITO_CLIENT_ID: '{{ cognito.clientId }}'
+        };
+    </script>
 </head>
 <body>
     <div class="bg-orb-blue"></div>

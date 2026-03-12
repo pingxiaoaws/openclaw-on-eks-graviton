@@ -1,0 +1,279 @@
+---
+# OpenClaw Multi-Tenant Platform - EKS Cluster Configuration
+# Optimized for production with Kata Containers + Graviton ARM64
+# Based on eks-workshop-v2 best practices
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: openclaw-platform
+  region: us-east-1  # Using us-east-1 (VPC quota cleared)
+  version: "1.34"
+  tags:
+    Environment: production
+    Project: openclaw-multi-tenant
+    ManagedBy: eksctl
+
+# VPC Configuration - Simplified
+vpc:
+  cidr: 172.31.0.0/16
+  nat:
+    gateway: Single  # Cost optimization: Single NAT Gateway
+  clusterEndpoints:
+    privateAccess: true
+    publicAccess: true
+  autoAllocateIPv6: false
+
+# IAM Configuration
+iam:
+  withOIDC: true  # Required for IRSA (EBS CSI, EFS CSI, ALB Controller, etc.)
+  serviceAccounts: []  # Will be created by Helm charts
+
+# Managed Node Groups
+managedNodeGroups:
+  # Standard workload nodes (system components, operators, provisioning service)
+  - name: standard-nodes
+    instanceTypes:
+      - m6g.xlarge  # Graviton3, 4 vCPU, 16GB RAM
+      - m6g.2xlarge
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 6
+    volumeSize: 100
+    volumeType: gp3
+    volumeEncrypted: true
+    privateNetworking: true
+    amiFamily: AmazonLinux2023  # AL2023 ARM64
+
+    labels:
+      workload-type: standard
+      node-class: system
+      arch: arm64
+
+    tags:
+      Name: openclaw-standard-node
+      k8s.io/cluster-autoscaler/enabled: "true"
+      k8s.io/cluster-autoscaler/openclaw-platform: "owned"
+
+    iam:
+      withAddonPolicies:
+        ebs: true
+        efs: true
+        albIngress: true
+        cloudWatch: true
+        autoScaler: true
+
+# Unmanaged Node Group for Kata Containers
+nodeGroups:
+  - name: kata-graviton-metal
+    instanceType: c6g.metal  # 64 vCPU, 128GB RAM, bare metal for nested virtualization
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 4
+    volumeSize: 300
+    volumeType: gp3
+    volumeIOPS: 16000
+    volumeThroughput: 1000
+    volumeEncrypted: true
+    privateNetworking: true
+
+    # Ubuntu 24.04 LTS ARM64 for EKS 1.34
+    ami: ami-014c6b7d15a2526d2
+    amiFamily: Ubuntu2404
+
+    # SSH Access (for debugging only)
+    ssh:
+      allow: true
+      publicKeyPath: ~/.ssh/id_rsa.pub
+
+    # Kata Containers Installation via User Data
+    preBootstrapCommands:
+      - |
+        #!/bin/bash
+        set -euo pipefail
+
+        # Logging
+        LOG_FILE="/var/log/kata-setup.log"
+        exec > >(tee -a "$LOG_FILE") 2>&1
+
+        echo "=== Kata Containers Setup Started at $(date) ==="
+
+        # 1. Update system and install prerequisites
+        apt-get update
+        apt-get install -y \
+          curl \
+          gnupg \
+          apt-transport-https \
+          ca-certificates \
+          software-properties-common \
+          device-mapper-persistent-data \
+          thin-provisioning-tools \
+          lvm2
+
+        # 2. Install Kata Containers 3.27.0
+        echo "deb [signed-by=/usr/share/keyrings/kata-containers-archive-keyring.gpg] https://download.opensuse.org/repositories/home:/katacontainers:/releases:/aarch64:/stable-3.x/xUbuntu_24.04/ /" | \
+          tee /etc/apt/sources.list.d/kata-containers.list
+
+        curl -fsSL https://download.opensuse.org/repositories/home:/katacontainers:/releases:/aarch64:/stable-3.x/xUbuntu_24.04/Release.key | \
+          gpg --dearmor -o /usr/share/keyrings/kata-containers-archive-keyring.gpg
+
+        apt-get update
+        apt-get install -y kata-containers
+
+        # 3. Configure devmapper thin pool for Kata
+        # Use 80% of root volume for thin pool
+        ROOT_DEVICE=$(lsblk -no PKNAME $(findmnt -n -o SOURCE /))
+
+        # Create thin pool if not exists
+        if ! lvs kata-vg/kata-thin-pool 2>/dev/null; then
+          # Extend root volume group or create new one
+          if vgs kata-vg 2>/dev/null; then
+            # Use existing VG
+            lvcreate -L 240G -T kata-vg/kata-thin-pool
+          else
+            # Create new VG (assume free space on root device)
+            pvcreate /dev/${ROOT_DEVICE}
+            vgcreate kata-vg /dev/${ROOT_DEVICE}
+            lvcreate -L 240G -T kata-vg/kata-thin-pool
+          fi
+        fi
+
+        # 4. Configure containerd for Kata (will be patched post-bootstrap)
+        mkdir -p /etc/containerd
+
+        # 5. Install containerd configuration patch script
+        cat > /usr/local/bin/configure-kata-containerd.sh << 'EOFSCRIPT'
+        #!/bin/bash
+        # This script runs after EKS bootstrap configures containerd
+
+        # Backup original config
+        cp /etc/containerd/config.toml /etc/containerd/config.toml.backup
+
+        # Append Kata runtime configuration
+        cat >> /etc/containerd/config.toml << 'EOFKATA'
+
+        # Devmapper snapshotter for Kata
+        [plugins."io.containerd.snapshotter.v1.devmapper"]
+          pool_name = "kata-vg-kata-thin-pool"
+          root_path = "/var/lib/containerd/io.containerd.snapshotter.v1.devmapper"
+          base_image_size = "40GB"
+          discard_blocks = true
+
+        # Kata Containers with Firecracker
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc]
+          snapshotter = "devmapper"
+          runtime_type = "io.containerd.kata-fc.v2"
+          privileged_without_host_devices = true
+          pod_annotations = ["io.katacontainers.*"]
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc.options]
+            ConfigPath = "/opt/kata/share/defaults/kata-containers/configuration-fc.toml"
+
+        # Kata Containers with QEMU (for EFS support via virtiofs)
+        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu]
+          snapshotter = "devmapper"
+          runtime_type = "io.containerd.kata-qemu.v2"
+          privileged_without_host_devices = true
+          pod_annotations = ["io.katacontainers.*"]
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu.options]
+            ConfigPath = "/opt/kata/share/defaults/kata-containers/configuration-qemu.toml"
+        EOFKATA
+
+        # Restart containerd
+        systemctl restart containerd
+        systemctl enable containerd
+
+        echo "Containerd configured for Kata at $(date)"
+        EOFSCRIPT
+
+        chmod +x /usr/local/bin/configure-kata-containerd.sh
+
+        # 6. Create systemd service to run after EKS bootstrap
+        cat > /etc/systemd/system/kata-containerd-config.service << 'EOFSVC'
+        [Unit]
+        Description=Configure containerd for Kata Containers
+        After=kubelet.service containerd.service
+        Requires=containerd.service
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/bin/configure-kata-containerd.sh
+        RemainAfterExit=yes
+
+        [Install]
+        WantedBy=multi-user.target
+        EOFSVC
+
+        systemctl daemon-reload
+        systemctl enable kata-containerd-config.service
+
+        echo "=== Kata Containers Pre-Bootstrap Setup Completed at $(date) ==="
+        echo "Post-bootstrap configuration will run via systemd service"
+
+    # Labels for scheduling
+    labels:
+      workload-type: kata
+      katacontainers.io/kata-runtime: "true"
+      node-class: compute
+      arch: arm64
+      os: ubuntu
+
+    # Taints to dedicate nodes for Kata workloads
+    taints:
+      - key: kata-dedicated
+        value: "true"
+        effect: NoSchedule
+
+    # Tags for AWS resources
+    tags:
+      Name: openclaw-kata-graviton-node
+      Runtime: kata-containers
+      Hypervisor: firecracker-qemu
+      NodeClass: compute
+
+    # IAM policies
+    iam:
+      withAddonPolicies:
+        ebs: true
+        efs: true
+        cloudWatch: true
+
+# EKS Add-ons (managed by AWS)
+addons:
+  - name: vpc-cni
+    version: 1.19.5-eksbuild.1  # Latest for 1.34 (not "latest" to avoid validation error)
+    resolveConflicts: overwrite
+    configurationValues: |-
+      {
+        "env": {
+          "ENABLE_PREFIX_DELEGATION": "true",
+          "ENABLE_POD_ENI": "true",
+          "POD_SECURITY_GROUP_ENFORCING_MODE": "standard"
+        }
+      }
+
+  - name: coredns
+    version: v1.11.4-eksbuild.9
+    resolveConflicts: overwrite
+
+  - name: kube-proxy
+    version: v1.34.2-eksbuild.3
+    resolveConflicts: overwrite
+
+  - name: aws-ebs-csi-driver
+    version: v1.41.0-eksbuild.1
+    resolveConflicts: overwrite
+    wellKnownPolicies:
+      ebsCSIController: true
+    serviceAccountRoleARN:  # Will be created automatically by eksctl
+
+# CloudWatch Logging
+cloudWatch:
+  clusterLogging:
+    enableTypes:
+      - api
+      - audit
+      - authenticator
+      - controllerManager
+      - scheduler
+    logRetentionInDays: 7  # Cost optimization

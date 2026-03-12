@@ -1,0 +1,164 @@
+---
+# OpenClaw Test Instance for Kata Containers + EFS
+# This is a minimal configuration for testing the platform
+
+apiVersion: openclaw.rocks/v1alpha1
+kind: OpenClawInstance
+metadata:
+  name: test-instance
+  namespace: openclaw
+  labels:
+    environment: test
+    runtime: kata-qemu
+
+spec:
+  # Bedrock Model Configuration
+  config:
+    raw:
+      agents:
+        defaults:
+          model:
+            primary: "bedrock/us.anthropic.claude-opus-4-6-v1:0"
+
+  # AWS Credentials (must create secret first)
+  envFrom:
+    - secretRef:
+        name: aws-credentials  # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+
+  # Resource Configuration
+  # Note: Kata VM adds overhead, so requests are higher than standard containers
+  resources:
+    requests:
+      cpu: "600m"      # 500m base + 100m VM overhead
+      memory: "1.2Gi"  # 1Gi base + 200Mi VM overhead
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  # Availability - Kata Containers with QEMU (for EFS support)
+  availability:
+    # IMPORTANT: Use kata-qemu (not kata-fc) for EFS persistence
+    # kata-fc uses tmpfs which does NOT persist writes back to EFS
+    # kata-qemu uses virtiofs which fully supports EFS read/write
+    runtimeClassName: kata-qemu
+
+    nodeSelector:
+      workload-type: kata  # Schedule on Kata nodes
+
+    tolerations:
+      - key: kata-dedicated
+        operator: Exists
+        effect: NoSchedule
+
+  # Storage - EFS for cross-AZ persistence
+  storage:
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: efs-sc  # EFS StorageClass (created by script)
+      accessModes:
+        - ReadWriteMany  # EFS supports RWX (cross-AZ, multi-pod)
+
+  # Networking
+  networking:
+    service:
+      type: ClusterIP  # Internal access only (can change to LoadBalancer for external)
+      port: 18789
+
+  # Security Configuration
+  security:
+    podSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false  # OpenClaw needs write access
+      capabilities:
+        drop:
+          - ALL
+
+    networkPolicy:
+      enabled: true
+      allowDNS: true
+      egress:
+        # Allow Bedrock API access
+        - to:
+            - namespaceSelector: {}
+          ports:
+            - protocol: TCP
+              port: 443
+
+    rbac:
+      createServiceAccount: true
+
+  # Observability
+  observability:
+    metrics:
+      enabled: true
+      port: 9090
+      path: /metrics
+
+    logging:
+      level: info
+      format: json
+
+  # Health Checks
+  healthCheck:
+    enabled: true
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 18789
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 18789
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+---
+# Optional: NetworkPolicy for additional security
+# Allows only necessary egress (DNS, Bedrock API)
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-instance-netpol
+  namespace: openclaw
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: test-instance
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # HTTPS (Bedrock API)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443

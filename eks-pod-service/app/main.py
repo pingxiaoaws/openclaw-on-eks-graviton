@@ -77,13 +77,23 @@ def create_app():
 
     @app.route('/login')
     def login():
-        """Serve login page"""
-        return render_template('login-new.html')
+        """Serve login page with Cognito config"""
+        cognito_config = {
+            'region': app.config.get('COGNITO_REGION', 'us-east-1'),
+            'userPoolId': app.config.get('COGNITO_USER_POOL_ID', ''),
+            'clientId': app.config.get('COGNITO_CLIENT_ID', '')
+        }
+        return render_template('login-new.html', cognito=cognito_config)
 
     @app.route('/dashboard')
     def dashboard():
-        """Serve dashboard page"""
-        return render_template('dashboard-new.html')
+        """Serve dashboard page with Cognito config"""
+        cognito_config = {
+            'region': app.config.get('COGNITO_REGION', 'us-east-1'),
+            'userPoolId': app.config.get('COGNITO_USER_POOL_ID', ''),
+            'clientId': app.config.get('COGNITO_CLIENT_ID', '')
+        }
+        return render_template('dashboard-new.html', cognito=cognito_config)
 
     @app.route('/test')
     def test_dashboard():
