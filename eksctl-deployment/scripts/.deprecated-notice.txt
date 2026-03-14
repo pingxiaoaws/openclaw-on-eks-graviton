@@ -1,0 +1,24 @@
+DEPRECATED SCRIPTS NOTICE
+=========================
+
+The following scripts have been replaced by the unified deployment script:
+
+- 04-deploy-provisioning-service.sh
+- 05-deploy-cloudfront-cognito.sh
+
+These files are kept for reference but should NOT be used for new deployments.
+
+USE INSTEAD:
+  ./04-deploy-application-stack.sh
+
+This unified script deploys the complete application stack in the correct order:
+1. OpenClaw Operator
+2. Bedrock IAM Role & Pod Identity
+3. Cognito User Pool & Client
+4. Docker Image Build
+5. Provisioning Service (with Cognito config)
+6. Internet-facing ALB
+7. CloudFront Distribution
+8. Service config update (with CloudFront config)
+
+This ensures all environment variables are properly configured before services start.

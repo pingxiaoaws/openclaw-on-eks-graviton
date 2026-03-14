@@ -1,0 +1,33 @@
+#!/bin/bash
+# ============================================================================
+# DEPRECATED: This script has been replaced by 04-deploy-application-stack.sh
+# ============================================================================
+#
+# This file is kept for reference only and should NOT be used for new deployments.
+#
+# REASON: This script deploys the Provisioning Service without Cognito and
+# CloudFront configuration, which causes JWT authentication and public access
+# issues. The unified script (04-deploy-application-stack.sh) ensures all
+# components are deployed in the correct order with proper environment variables.
+#
+# USE INSTEAD:
+#   ./04-deploy-application-stack.sh
+#
+# If you need to redeploy only the Provisioning Service (after initial setup),
+# you can manually rebuild and update the deployment:
+#
+#   cd ../eks-pod-service
+#   docker build -t <account>.dkr.ecr.<region>.amazonaws.com/openclaw-provisioning:latest .
+#   docker push <account>.dkr.ecr.<region>.amazonaws.com/openclaw-provisioning:latest
+#   kubectl rollout restart deployment openclaw-provisioning -n openclaw-provisioning
+#
+# ============================================================================
+
+echo "❌ ERROR: This script is deprecated and should not be used."
+echo ""
+echo "Please use the unified deployment script instead:"
+echo "  ./04-deploy-application-stack.sh"
+echo ""
+echo "See .deprecated-notice.txt for more information."
+echo ""
+exit 1
