@@ -8,7 +8,7 @@ metadata:
     app: openclaw-provisioning
     version: v1
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: openclaw-provisioning
