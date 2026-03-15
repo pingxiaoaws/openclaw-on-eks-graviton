@@ -464,6 +464,38 @@ if [ -n "$EXISTING_DIST_ID" ]; then
     --id "$CLOUDFRONT_DIST_ID" \
     --query 'Distribution.DomainName' \
     --output text)
+
+  # Update CloudFront configuration to forward necessary headers for session auth
+  echo "Updating CloudFront configuration for session cookie support..."
+
+  # Get current config and ETag
+  aws cloudfront get-distribution-config --id "$CLOUDFRONT_DIST_ID" > /tmp/cf-current.json
+  ETAG=$(jq -r '.ETag' /tmp/cf-current.json)
+
+  # Update Headers in DefaultCacheBehavior
+  jq '.DistributionConfig.DefaultCacheBehavior.ForwardedValues.Headers = {
+    "Quantity": 8,
+    "Items": [
+      "Host",
+      "Authorization",
+      "Origin",
+      "X-Forwarded-For",
+      "X-Forwarded-Proto",
+      "X-Forwarded-Host",
+      "CloudFront-Forwarded-Proto",
+      "CloudFront-Is-Desktop-Viewer"
+    ]
+  } | .DistributionConfig' /tmp/cf-current.json > /tmp/cf-updated-config.json
+
+  # Apply update
+  aws cloudfront update-distribution \
+    --id "$CLOUDFRONT_DIST_ID" \
+    --distribution-config file:///tmp/cf-updated-config.json \
+    --if-match "$ETAG" > /dev/null
+
+  echo -e "${GREEN}✅ CloudFront configuration updated${NC}"
+  echo "Waiting for CloudFront distribution to deploy..."
+  aws cloudfront wait distribution-deployed --id "$CLOUDFRONT_DIST_ID"
 else
   echo "Creating CloudFront Distribution..."
   
@@ -509,8 +541,17 @@ else
         "Forward": "all"
       },
       "Headers": {
-        "Quantity": 3,
-        "Items": ["Host", "Authorization", "Origin"]
+        "Quantity": 8,
+        "Items": [
+          "Host",
+          "Authorization",
+          "Origin",
+          "X-Forwarded-For",
+          "X-Forwarded-Proto",
+          "X-Forwarded-Host",
+          "CloudFront-Forwarded-Proto",
+          "CloudFront-Is-Desktop-Viewer"
+        ]
       }
     },
     "MinTTL": 0,
