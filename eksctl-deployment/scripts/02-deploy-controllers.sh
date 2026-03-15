@@ -173,6 +173,24 @@ mountOptions:
 EOF
 
 echo -e "${GREEN}✅ EFS StorageClass created${NC}"
+
+# Create gp3 StorageClass for EBS volumes (higher performance than gp2)
+echo "Creating gp3 StorageClass..."
+cat <<EOF | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+EOF
+
+echo -e "${GREEN}✅ gp3 StorageClass created${NC}"
 echo ""
 
 # ============================================================================
@@ -478,7 +496,8 @@ echo ""
 echo "Installed Components:"
 echo "  ✅ EFS CSI Driver"
 echo "  ✅ EFS FileSystem: $EFS_ID"
-echo "  ✅ EFS StorageClass: efs-sc"
+echo "  ✅ EFS StorageClass: efs-sc (ReadWriteMany, cross-AZ)"
+echo "  ✅ EBS StorageClass: gp3 (ReadWriteOnce, high-performance)"
 echo "  ✅ AWS Load Balancer Controller"
 echo "  ✅ EKS Pod Identity"
 
