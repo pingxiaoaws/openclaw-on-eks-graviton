@@ -1,7 +1,7 @@
 """Reverse proxy API endpoint for OpenClaw instances"""
 from flask import Blueprint, request, Response, current_app
 from app.k8s.client import K8sClient
-from app.utils.jwt_auth import require_auth
+from app.utils.session_auth import require_auth
 from app.utils.user_id import generate_user_id
 import requests
 import logging

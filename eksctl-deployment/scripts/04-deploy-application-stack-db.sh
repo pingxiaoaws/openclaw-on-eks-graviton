@@ -42,7 +42,7 @@ echo ""
 
 echo -e "${BLUE}[1/8] Installing OpenClaw Operator...${NC}"
 
-OPERATOR_DIR="$(dirname "$0")/../../k8s-operator"
+OPERATOR_DIR="$(dirname "$0")/../../../k8s-operator"
 if [ ! -d "$OPERATOR_DIR" ]; then
   echo -e "${YELLOW}⚠️  Operator directory not found: $OPERATOR_DIR${NC}"
   echo "Skipping operator installation (deploy manually later)"
@@ -176,21 +176,36 @@ fi
 echo ""
 
 # ============================================================================
-# Step 4: Build and Push Docker Image
+# Step 4: Build and Push Docker Image (Optional)
 # ============================================================================
 
-echo -e "${BLUE}[4/8] Building and pushing Docker image...${NC}"
+echo -e "${BLUE}[4/8] Building and pushing Docker image (optional)...${NC}"
+echo ""
+echo "Do you want to build and push a new Docker image?"
+echo "  yes - Build new image from source code"
+echo "  no  - Skip and use existing image (default)"
+echo ""
+read -p "Build new image? (yes/no, default: no): " BUILD_IMAGE
+BUILD_IMAGE=${BUILD_IMAGE:-no}
 
-BUILD_SCRIPT="$(dirname "$0")/build-and-push-image.sh"
+if [[ "$BUILD_IMAGE" =~ ^[Yy](es)?$ ]]; then
+  echo ""
+  echo "Building Docker image..."
+  BUILD_SCRIPT="$(dirname "$0")/build-and-push-image.sh"
 
-if [ -f "$BUILD_SCRIPT" ]; then
-  echo "Using standalone build script..."
-  export AWS_REGION
-  export AWS_ACCOUNT
-  "$BUILD_SCRIPT"
+  if [ -f "$BUILD_SCRIPT" ]; then
+    echo "Using standalone build script..."
+    export AWS_REGION
+    export AWS_ACCOUNT
+    "$BUILD_SCRIPT"
+    echo -e "${GREEN}✅ Docker image built and pushed${NC}"
+  else
+    echo -e "${RED}❌ Build script not found: $BUILD_SCRIPT${NC}"
+    exit 1
+  fi
 else
-  echo -e "${RED}❌ Build script not found: $BUILD_SCRIPT${NC}"
-  exit 1
+  echo -e "${YELLOW}⚠️  Skipping Docker image build${NC}"
+  echo "Using existing image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest"
 fi
 
 echo ""
@@ -201,7 +216,7 @@ echo ""
 
 echo -e "${BLUE}[5/8] Deploying Provisioning Service...${NC}"
 
-PROVISIONING_DIR="$(dirname "$0")/../../open-claw-operator-on-EKS-kata/eks-pod-service"
+PROVISIONING_DIR="$(dirname "$0")/../../eks-pod-service"
 
 kubectl create namespace openclaw-provisioning --dry-run=client -o yaml | kubectl apply -f -
 
@@ -236,7 +251,7 @@ spec:
       serviceAccountName: openclaw-provisioner
       containers:
       - name: provisioning
-        image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest
+        image: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning-chinaregion:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

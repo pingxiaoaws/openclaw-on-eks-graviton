@@ -1,6 +1,6 @@
 """Device pairing API endpoints"""
-from flask import Blueprint, request, jsonify, current_app
-from app.utils.jwt_auth import require_auth
+from flask import Blueprint, request, jsonify, current_app, session
+from app.utils.session_auth import require_auth
 from app.utils.user_id import generate_user_id
 from app.utils.pod_exec import exec_in_pod, check_pod_exists
 import logging
@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 @devices_bp.route('/api/devices/approve', methods=['POST'])
-@require_auth(lambda: current_app.jwt_verifier)
-def approve_device(user_info):
+@require_auth
+def approve_device():
     """
     Approve device pairing for OpenClaw instance
 
@@ -46,9 +46,10 @@ def approve_device(user_info):
             return jsonify({"error": "user_id is required"}), 400
 
         # 2. Authorization check - users can only approve devices for their own instances
-        authenticated_user_id = generate_user_id(user_info['user_email'])
+        user_email = session['user_email']
+        authenticated_user_id = generate_user_id(user_email)
         if user_id != authenticated_user_id:
-            logger.warning(f"Authorization failed: {user_info['user_email']} tried to approve for {user_id}")
+            logger.warning(f"Authorization failed: {user_email} tried to approve for {user_id}")
             return jsonify({
                 "error": "Forbidden",
                 "message": "You can only approve devices for your own instance"
@@ -193,8 +194,8 @@ def approve_device(user_info):
 
 
 @devices_bp.route('/api/devices/list', methods=['GET'])
-@require_auth(lambda: current_app.jwt_verifier)
-def list_devices(user_info):
+@require_auth
+def list_devices():
     """
     List devices for OpenClaw instance
 
@@ -217,15 +218,18 @@ def list_devices(user_info):
     - Users can only list devices for their own instances
     """
     try:
+        # Get authenticated user
+        user_email = session['user_email']
+        authenticated_user_id = generate_user_id(user_email)
+
         # 1. Get user_id from query or use authenticated user
         user_id = request.args.get('user_id')
         if not user_id:
-            user_id = generate_user_id(user_info['user_email'])
+            user_id = authenticated_user_id
 
         # 2. Authorization check
-        authenticated_user_id = generate_user_id(user_info['user_email'])
         if user_id != authenticated_user_id:
-            logger.warning(f"Authorization failed: user {user_info['user_email']} tried to list devices for user_id {user_id}")
+            logger.warning(f"Authorization failed: user {user_email} tried to list devices for user_id {user_id}")
             return jsonify({
                 "error": "Forbidden",
                 "message": "You can only list devices for your own instance"
