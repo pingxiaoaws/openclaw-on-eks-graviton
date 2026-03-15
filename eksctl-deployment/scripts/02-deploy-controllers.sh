@@ -170,6 +170,8 @@ parameters:
   gid: "1000"
 mountOptions:
   - tls
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
 EOF
 
 echo -e "${GREEN}✅ EFS StorageClass created${NC}"

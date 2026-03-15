@@ -40,9 +40,9 @@ echo ""
 # Step 1: Install OpenClaw Operator
 # ============================================================================
 
-echo -e "${BLUE}[1/8] Installing OpenClaw Operator...${NC}"
+echo -e "${BLUE}[1/9] Installing OpenClaw Operator...${NC}"
 
-OPERATOR_DIR="$(dirname "$0")/../../../k8s-operator"
+OPERATOR_DIR="$(dirname "$0")/../../openclaw-operator"
 if [ ! -d "$OPERATOR_DIR" ]; then
   echo -e "${YELLOW}⚠️  Operator directory not found: $OPERATOR_DIR${NC}"
   echo "Skipping operator installation (deploy manually later)"
@@ -70,7 +70,7 @@ echo ""
 # Step 2: Create Bedrock IAM Policy and Role
 # ============================================================================
 
-echo -e "${BLUE}[2/8] Creating Bedrock IAM Role...${NC}"
+echo -e "${BLUE}[2/9] Creating Bedrock IAM Role...${NC}"
 
 BEDROCK_POLICY_NAME="OpenClawBedrockAccess"
 BEDROCK_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${BEDROCK_POLICY_NAME}"
@@ -145,7 +145,7 @@ echo ""
 # Step 3: Create Pod Identity Association
 # ============================================================================
 
-echo -e "${BLUE}[3/8] Creating Pod Identity Association...${NC}"
+echo -e "${BLUE}[3/9] Creating Pod Identity Association...${NC}"
 
 BEDROCK_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${BEDROCK_ROLE_NAME}"
 
@@ -179,7 +179,7 @@ echo ""
 # Step 4: Build and Push Docker Image (Optional)
 # ============================================================================
 
-echo -e "${BLUE}[4/8] Building and pushing Docker image (optional)...${NC}"
+echo -e "${BLUE}[4/9] Building and pushing Docker image (optional)...${NC}"
 echo ""
 echo "Do you want to build and push a new Docker image?"
 echo "  yes - Build new image from source code"
