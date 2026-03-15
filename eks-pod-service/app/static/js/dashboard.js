@@ -127,33 +127,38 @@ const Dashboard = {
     init() {
         console.log('🚀 Dashboard initializing...');
 
-        // Check authentication
-        if (!Auth.init()) {
-            console.log('❌ Not authenticated');
-            console.log('⚠️ Auto-redirect disabled for debugging');
-            // Show error banner instead of redirecting
-            this.showError('Not authenticated. Please login first. (Auto-redirect disabled for debugging)');
-            this.showEmptyState();
-            // TEMPORARY: Disable auto-redirect for debugging
-            // const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
-            // window.location.href = loginPath;
-            return;
-        }
+        // Check authentication via session
+        fetch('/me')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Not authenticated');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Store user session
+                Auth.session = data.user;
 
-        // Display user email
-        const userEmail = Auth.getUserEmail();
-        document.getElementById('user-email').textContent = userEmail;
+                // Display user email
+                document.getElementById('user-email').textContent = data.user.email;
 
-        // Setup event listeners
-        this.setupEventListeners();
+                // Setup event listeners
+                this.setupEventListeners();
 
-        // Load user's instance
-        this.loadInstance();
+                // Load user's instance
+                this.loadInstance();
 
-        // Setup auto-refresh
-        this.startAutoRefresh();
+                // Setup auto-refresh
+                this.startAutoRefresh();
+            })
+            .catch(error => {
+                console.error('❌ Authentication check failed:', error);
+                this.showError('Not authenticated. Redirecting to login...');
+                this.showEmptyState();
+                const loginPath = window.location.pathname.startsWith('/prod') ? '/prod/login' : '/login';
+                setTimeout(() => window.location.href = loginPath, 2000);
+            });
     },
-
     // Setup event listeners
     setupEventListeners() {
         // Logout button
