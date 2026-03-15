@@ -297,6 +297,25 @@ if [ -n "$CLOUDFRONT_DIST_ID" ]; then
   IS_ENABLED=$(jq -r '.DistributionConfig.Enabled' /tmp/cf-config.json)
 
   if [ "$IS_ENABLED" == "true" ]; then
+    # Invalidate all cached content before disabling
+    echo "Invalidating CloudFront cache..."
+    INVALIDATION_ID=$(aws cloudfront create-invalidation \
+      --distribution-id "$CLOUDFRONT_DIST_ID" \
+      --paths "/*" \
+      --query 'Invalidation.Id' \
+      --output text)
+
+    if [ -n "$INVALIDATION_ID" ]; then
+      echo "  Invalidation created: $INVALIDATION_ID"
+      echo "  Waiting for invalidation to complete (this may take 1-2 minutes)..."
+      aws cloudfront wait invalidation-completed \
+        --distribution-id "$CLOUDFRONT_DIST_ID" \
+        --id "$INVALIDATION_ID" 2>/dev/null || echo "  (wait timed out, continuing...)"
+      echo -e "${GREEN}  ✅ Cache invalidated${NC}"
+    else
+      echo -e "${YELLOW}  ⚠️  Failed to create invalidation (continuing...)${NC}"
+    fi
+
     echo "Disabling distribution..."
     jq '.DistributionConfig.Enabled = false | .DistributionConfig' /tmp/cf-config.json > /tmp/cf-config-disabled.json
 
