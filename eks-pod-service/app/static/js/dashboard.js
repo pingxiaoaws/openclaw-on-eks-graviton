@@ -128,7 +128,9 @@ const Dashboard = {
         console.log('🚀 Dashboard initializing...');
 
         // Check authentication via session
-        fetch('/me')
+        fetch('/me', {
+            credentials: 'same-origin'  // Include cookies (session)
+        })
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Not authenticated');
