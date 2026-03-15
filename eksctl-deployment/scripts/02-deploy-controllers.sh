@@ -515,5 +515,13 @@ echo "Note: Karpenter skipped (using Managed Node Groups)"
 echo ""
 echo "Next Steps:"
 echo "  1. Run: ./03-verify-deployment.sh  (Verify installation)"
-echo "  2. Deploy Provisioning Service: ./04-deploy-provisioning-service.sh"
+
+# Detect region and suggest appropriate deployment script
+if [[ "$AWS_REGION" == cn-* ]]; then
+  echo "  2. Deploy Application Stack (China Region): ./04-deploy-application-stack-db.sh"
+  echo "     (Uses PostgreSQL for session storage, no Cognito)"
+else
+  echo "  2. Deploy Application Stack (Global Region): ./04-deploy-application-stack-cognito.sh"
+  echo "     (Uses Cognito for authentication)"
+fi
 echo ""
