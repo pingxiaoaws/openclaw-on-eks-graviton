@@ -546,6 +546,7 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
+                    credentials: 'same-origin',  // Include cookies (session)
                     body: JSON.stringify({ email, password }),
                 });
 
@@ -586,6 +587,7 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
+                    credentials: 'same-origin',  // Include cookies (session)
                     body: JSON.stringify({ username, email, password }),
                 });
 
@@ -613,7 +615,9 @@
         });
 
         // Check if already logged in
-        fetch(`${basePath}/me`)
+        fetch(`${basePath}/me`, {
+            credentials: 'same-origin'  // Include cookies (session)
+        })
             .then(response => {
                 if (response.ok) {
                     // User is logged in, redirect to dashboard
