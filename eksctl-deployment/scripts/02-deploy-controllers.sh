@@ -20,8 +20,16 @@ echo ""
 
 # Get cluster info
 CLUSTER_CONTEXT=$(kubectl config current-context)
-CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | rev | cut -d'/' -f1 | rev)
-AWS_REGION=$(echo "$CLUSTER_CONTEXT" | grep -oE 'us(-gov)?-(east|west|central)-(1|2)' | head -1)
+# Extract cluster name and region (supports both ARN and eksctl formats)
+if [[ "$CLUSTER_CONTEXT" == arn:aws:eks:* ]]; then
+  # ARN format: arn:aws:eks:region:account:cluster/cluster-name
+  AWS_REGION=$(echo "$CLUSTER_CONTEXT" | cut -d':' -f4)
+  CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | cut -d'/' -f2)
+else
+  # eksctl format: user@cluster-name.region.eksctl.io
+  CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | rev | cut -d'/' -f1 | rev)
+  AWS_REGION=$(echo "$CLUSTER_CONTEXT" | grep -oE 'us(-gov)?-(east|west|central)-(1|2)' | head -1)
+fi
 AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 
 echo "Cluster: $CLUSTER_NAME"

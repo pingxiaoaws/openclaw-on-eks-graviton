@@ -9,6 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <!-- Amazon Cognito Identity SDK -->
     <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.7/dist/amazon-cognito-identity.min.js"></script>
+    <!-- Billing Panel Styles -->
+    <link rel="stylesheet" href="/static/css/billing.css">
     <style>
         * {
             margin: 0;
@@ -978,7 +980,7 @@
         // Dynamically load scripts with correct path prefix
         (function() {
             const basePath = window.location.pathname.startsWith('/prod') ? '/prod' : '';
-            const scripts = ['config.js', 'auth.js', 'api.js', 'dashboard.js'];
+            const scripts = ['config.js', 'auth.js', 'api.js', 'dashboard.js', 'billing.js'];
 
             function loadScript(index) {
                 if (index >= scripts.length) {

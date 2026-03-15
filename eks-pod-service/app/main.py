@@ -1,8 +1,10 @@
 """Main Flask application"""
 from flask import Flask, render_template, send_from_directory
+from flask_session import Session
 from kubernetes import config
 import logging
 import os
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +33,14 @@ def create_app():
     # Load configuration
     app.config.from_object('app.config.Config')
 
-    # Initialize JWT Verifier for Cognito authentication
-    from app.utils.jwt_auth import CognitoJWTVerifier
-    jwt_verifier = CognitoJWTVerifier(
-        region=app.config['COGNITO_REGION'],
-        user_pool_id=app.config['COGNITO_USER_POOL_ID'],
-        client_id=app.config['COGNITO_CLIENT_ID']
-    )
-    # Store verifier in app context for access in blueprints
-    app.jwt_verifier = jwt_verifier
-    logger.info("✅ Cognito JWT verifier initialized")
+    # Initialize database
+    from app.database import init_db
+    init_db()
+    logger.info("✅ Database initialized")
+
+    # Initialize Flask-Session
+    Session(app)
+    logger.info("✅ Session management initialized")
 
     # Initialize Kubernetes client (in-cluster)
     try:
@@ -60,13 +60,20 @@ def create_app():
     ensure_keeper_ingress()
 
     # Register blueprints (API endpoints)
-    from app.api import provision_bp, status_bp, delete_bp, health_bp, proxy_bp, devices_bp
+    from app.api import register_bp, login_bp, provision_bp, status_bp, delete_bp, health_bp, proxy_bp, devices_bp
+    from app.api.billing import billing_bp
+    from app.api.admin import admin_bp
+
+    app.register_blueprint(register_bp)
+    app.register_blueprint(login_bp)
     app.register_blueprint(provision_bp)
     app.register_blueprint(status_bp)
     app.register_blueprint(delete_bp)
     app.register_blueprint(health_bp)
     app.register_blueprint(proxy_bp)  # Reverse proxy for instance access
     app.register_blueprint(devices_bp)  # Device pairing API
+    app.register_blueprint(billing_bp)  # Billing API
+    app.register_blueprint(admin_bp)  # Admin API
 
     # Frontend routes
     @app.route('/')
@@ -76,29 +83,24 @@ def create_app():
         return redirect('/login')
 
     @app.route('/login')
-    def login():
-        """Serve login page with Cognito config"""
-        cognito_config = {
-            'region': app.config.get('COGNITO_REGION', 'us-east-1'),
-            'userPoolId': app.config.get('COGNITO_USER_POOL_ID', ''),
-            'clientId': app.config.get('COGNITO_CLIENT_ID', '')
-        }
-        return render_template('login-new.html', cognito=cognito_config)
+    def login_page():
+        """Serve login page"""
+        return render_template('login-simple.html')
 
     @app.route('/dashboard')
     def dashboard():
-        """Serve dashboard page with Cognito config"""
-        cognito_config = {
-            'region': app.config.get('COGNITO_REGION', 'us-east-1'),
-            'userPoolId': app.config.get('COGNITO_USER_POOL_ID', ''),
-            'clientId': app.config.get('COGNITO_CLIENT_ID', '')
-        }
-        return render_template('dashboard-new.html', cognito=cognito_config)
+        """Serve dashboard page"""
+        return render_template('dashboard-new.html')
 
     @app.route('/test')
     def test_dashboard():
         """Serve test dashboard (no auth required)"""
         return render_template('dashboard-test.html')
+
+    @app.route('/admin')
+    def admin_dashboard():
+        """Serve admin dashboard page"""
+        return render_template('admin-dashboard.html')
 
     # Serve static files explicitly (for cases where static_folder doesn't work)
     @app.route('/static/<path:filename>')
@@ -112,6 +114,19 @@ def create_app():
 
     # Apply WSGI middleware to strip /prod prefix (must be last)
     app.wsgi_app = StripProdPrefixMiddleware(app.wsgi_app)
+
+    # Start background usage collector (only in production)
+    if not app.config['DEBUG']:
+        try:
+            from app.services.usage_collector import UsageCollector
+            collector = UsageCollector(interval=300)  # 5 minutes
+            collector_thread = threading.Thread(target=collector.run, daemon=True, name='UsageCollector')
+            collector_thread.start()
+            logger.info("✅ Usage collector started (5-minute interval)")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to start usage collector: {e}")
+    else:
+        logger.info("ℹ️ Usage collector disabled (DEBUG mode)")
 
     logger.info("🚀 OpenClaw Provisioning Service initialized")
     logger.info(f"📁 Template folder: {template_dir}")

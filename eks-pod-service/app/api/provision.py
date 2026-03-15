@@ -1,5 +1,5 @@
 """Provision API endpoint"""
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, session
 from app.k8s.client import K8sClient
 from app.k8s.namespace import create_namespace
 # from app.k8s.quota import create_resource_quota  # Disabled: operator's init-config lacks resources
@@ -8,7 +8,7 @@ from app.k8s.instance import create_openclaw_instance
 from app.aws.iam import create_pod_identity_role, create_pod_identity_association
 from app.utils.user_id import generate_user_id
 from app.utils.validator import validate_email
-from app.utils.jwt_auth import require_auth
+from app.utils.session_auth import require_auth
 from app.config import Config
 import logging
 
@@ -16,12 +16,12 @@ provision_bp = Blueprint('provision', __name__)
 logger = logging.getLogger(__name__)
 
 @provision_bp.route('/provision', methods=['POST'])
-@require_auth(lambda: current_app.jwt_verifier)
-def provision(user_info):
+@require_auth
+def provision():
     """
     Create an OpenClaw instance
 
-    Authentication: Requires valid JWT token in Authorization header
+    Authentication: Requires valid session (user must be logged in)
 
     Request Body (optional):
     {
@@ -49,15 +49,15 @@ def provision(user_info):
     }
     """
     try:
-        # Get user info from verified JWT token (secure)
-        user_email = user_info['user_email']
-        cognito_sub = user_info['cognito_sub']
+        # Get user info from session
+        user_email = session['user_email']
+        username = session.get('username', user_email)
 
-        # Validate email (should always be valid from JWT, but double-check)
+        # Validate email (should always be valid from session, but double-check)
         if not user_email or not validate_email(user_email):
             return jsonify({
-                "error": "Invalid email in JWT token",
-                "hint": "Contact administrator"
+                "error": "Invalid email in session",
+                "hint": "Please login again"
             }), 400
 
         # Get custom config from request body (optional)
@@ -132,8 +132,8 @@ def provision(user_info):
             user_id,
             namespace,
             user_email,
-            cognito_sub,
-            custom_config,
+            cognito_sub=None,  # No longer using Cognito
+            custom_config=custom_config,
             role_arn=role_arn,
             provider=provider,
             siliconflow_api_key=siliconflow_api_key

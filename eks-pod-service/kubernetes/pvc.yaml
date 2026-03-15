@@ -1,0 +1,30 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-provisioning-data
+  namespace: openclaw-provisioning
+  labels:
+    app: openclaw-provisioning
+spec:
+  accessModes:
+    - ReadWriteOnce  # 单 Pod 挂载（数据库）
+  storageClassName: gp3  # 或使用 EFS 的 efs-sc（支持 RWX）
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-provisioning-sessions
+  namespace: openclaw-provisioning
+  labels:
+    app: openclaw-provisioning
+spec:
+  accessModes:
+    - ReadWriteMany  # 多 Pod 共享（Session）
+  storageClassName: efs-sc  # 必须使用 EFS 支持 RWX
+  resources:
+    requests:
+      storage: 1Gi

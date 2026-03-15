@@ -42,8 +42,16 @@ check_warn() {
 echo -e "${BLUE}[1] Cluster Access${NC}"
 
 if kubectl cluster-info &>/dev/null; then
-  CLUSTER_NAME=$(kubectl config current-context | cut -d'@' -f2 | cut -d'.' -f1)
-  check_pass "Connected to cluster: $CLUSTER_NAME"
+  CONTEXT=$(kubectl config current-context)
+  # Extract cluster name from ARN format or eksctl format
+  if [[ "$CONTEXT" == arn:aws:eks:* ]]; then
+    # ARN format: arn:aws:eks:region:account:cluster/cluster-name
+    CLUSTER_NAME=$(echo "$CONTEXT" | cut -d'/' -f2)
+  else
+    # eksctl format: user@cluster-name.region.eksctl.io
+    CLUSTER_NAME=$(echo "$CONTEXT" | cut -d'@' -f2 | cut -d'.' -f1)
+  fi
+  check_pass "Connected to cluster: $CONTEXT"
 else
   check_fail "Cannot connect to cluster"
   exit 1
@@ -91,8 +99,17 @@ echo ""
 
 echo -e "${BLUE}[3] EKS Add-ons${NC}"
 
-CLUSTER_NAME=$(kubectl config current-context | cut -d'@' -f2 | cut -d'.' -f1)
-AWS_REGION=$(kubectl config current-context | grep -o 'us-[a-z]*-[0-9]' || echo "us-east-1")
+# Extract cluster name and region from context (supports ARN and eksctl formats)
+CONTEXT=$(kubectl config current-context)
+if [[ "$CONTEXT" == arn:aws:eks:* ]]; then
+  # ARN format: arn:aws:eks:region:account:cluster/cluster-name
+  AWS_REGION=$(echo "$CONTEXT" | cut -d':' -f4)
+  CLUSTER_NAME=$(echo "$CONTEXT" | cut -d'/' -f2)
+else
+  # eksctl format: user@cluster-name.region.eksctl.io
+  CLUSTER_NAME=$(echo "$CONTEXT" | cut -d'@' -f2 | cut -d'.' -f1)
+  AWS_REGION=$(echo "$CONTEXT" | grep -o 'us-[a-z]*-[0-9]' || echo "us-east-1")
+fi
 
 for ADDON in vpc-cni coredns kube-proxy aws-ebs-csi-driver; do
   STATUS=$(aws eks describe-addon \
@@ -243,7 +260,7 @@ EOF
   POD_STATUS=$(kubectl get pod kata-test-verify -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
 
   if [ "$POD_STATUS" == "Running" ]; then
-    # Get kernel version
+    # Get kernel version from running pod
     KERNEL=$(kubectl exec kata-test-verify -- uname -r 2>/dev/null || echo "unknown")
 
     if echo "$KERNEL" | grep -q "^6\.18"; then
@@ -254,11 +271,24 @@ EOF
 
     # Cleanup
     kubectl delete pod kata-test-verify --wait=false &>/dev/null
+  elif [ "$POD_STATUS" == "Succeeded" ]; then
+    # Pod completed successfully, get kernel version from logs
+    KERNEL=$(kubectl logs kata-test-verify 2>/dev/null | head -1 || echo "unknown")
+
+    if echo "$KERNEL" | grep -q "^6\.18"; then
+      check_pass "Kata test pod completed successfully with VM kernel: $KERNEL"
+    else
+      check_warn "Kata test pod completed but kernel version unexpected: $KERNEL"
+    fi
+
+    # Cleanup
+    kubectl delete pod kata-test-verify --wait=false &>/dev/null
   elif [ "$POD_STATUS" == "Pending" ]; then
     check_warn "Kata test pod still pending (node may be initializing)"
     kubectl delete pod kata-test-verify --wait=false &>/dev/null
   else
     check_warn "Kata test pod failed to start ($POD_STATUS)"
+    kubectl delete pod kata-test-verify --wait=false &>/dev/null
   fi
 else
   echo "  Skipping (no Kata nodes ready)"

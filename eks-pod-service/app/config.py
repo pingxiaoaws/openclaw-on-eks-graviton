@@ -19,6 +19,17 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
     DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 
+    # Session configuration
+    SESSION_TYPE = 'filesystem'  # Store sessions on disk
+    SESSION_PERMANENT = True
+    PERMANENT_SESSION_LIFETIME = 86400 * 7  # 7 days in seconds
+    SESSION_COOKIE_SECURE = True  # Only send cookie over HTTPS
+    SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to cookie
+    SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
+
+    # Database
+    DATABASE_PATH = os.environ.get('DATABASE_PATH', '/app/data/openclaw.db')
+
     # Kubernetes
     K8S_NAMESPACE_PREFIX = 'openclaw'
 
@@ -82,12 +93,6 @@ class Config:
         'CREATE_IAM_ROLE_PER_USER',
         'false'
     ).lower() == 'true'
-
-    # Cognito JWT 验证配置
-    COGNITO_REGION = os.environ.get('COGNITO_REGION', 'us-west-2')
-    COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', '')
-    COGNITO_CLIENT_ID = os.environ.get('COGNITO_CLIENT_ID', '')  # No secret
-    COGNITO_USER_POOL_DOMAIN = os.environ.get('COGNITO_USER_POOL_DOMAIN', '')  # e.g., your-domain.auth.us-west-2.amazoncognito.com
 
     # Ingress 配置（Internal ALB + API Gateway）
     INGRESS_ENABLED = os.environ.get('INGRESS_ENABLED', 'true').lower() == 'true'

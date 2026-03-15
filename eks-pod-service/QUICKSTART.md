@@ -1,76 +1,93 @@
-# CloudFront 集成快速执行指南
+# 🚀 快速开始 - 本地认证系统
 
-## 当前状态
+## 3 步部署
 
-✅ **Phase 1 已完成** (2026-03-07)
-- Provisioning Service 已成功加入共享 Public ALB
-- ALB 规则配置正确
-- 所有测试通过
-
-## 快速执行
-
-### Phase 2: 更新 CloudFront（预计 15 分钟）
+### 1️⃣ 检查前提条件
 
 ```bash
-cd open-claw-operator-on-EKS-kata/eks-pod-service
+# 确保 kubectl 连接到正确的集群
+kubectl config current-context
 
-# 执行更新脚本（会提示确认）
-bash scripts/update-cloudfront-phase2.sh
+# 确保 EFS StorageClass 存在（用于 session 共享）
+kubectl get storageclass efs-sc
 ```
 
-**脚本功能**:
-- ✅ 自动备份当前配置
-- ✅ 添加 7 个新 Cache Behaviors (provisioning service 路由)
-- ✅ 预览变更并确认
-- ✅ 应用更新
-- ✅ 监控部署状态
+### 2️⃣ 一键部署
 
-**部署时间**: 5-10 分钟
-
-**等待部署完成**:
 ```bash
-# 实时监控
-watch -n 10 'aws cloudfront get-distribution --id EXXXXXXXXXXXXX --query Distribution.Status --output text'
+cd eks-pod-service
+./deploy-local-auth.sh
+```
 
-# 或一次性等待
-aws cloudfront wait distribution-deployed --id EXXXXXXXXXXXXX
+脚本会自动：
+- ✅ 创建 namespace
+- ✅ 生成 SECRET_KEY
+- ✅ 构建并推送 Docker 镜像
+- ✅ 创建 PVC（数据库 + session）
+- ✅ 部署应用（2 副本）
+
+### 3️⃣ 验证
+
+```bash
+# Port-forward 到本地
+kubectl port-forward -n openclaw-provisioning svc/openclaw-provisioning 8080:80
+
+# 浏览器打开
+open http://localhost:8080/login
+
+# 或使用 curl 测试
+curl -X POST http://localhost:8080/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testuser","email":"test@example.com","password":"test1234"}'
 ```
 
 ---
 
-### Phase 3: 测试验证（预计 5 分钟）
+## 使用示例
 
-**等待 CloudFront Status = Deployed 后执行**:
+### 注册和登录
 
 ```bash
-cd open-claw-operator-on-EKS-kata/eks-pod-service
+# 1. 注册
+curl -X POST http://localhost:8080/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "johndoe",
+    "email": "john@example.com",
+    "password": "securepass123"
+  }'
 
-# 执行测试脚本
-bash scripts/test-cloudfront-phase3.sh
+# 2. 登录（保存 cookie）
+curl -X POST http://localhost:8080/login \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d '{
+    "email": "john@example.com",
+    "password": "securepass123"
+  }'
+
+# 3. 使用 cookie 创建实例
+curl -X POST http://localhost:8080/provision \
+  -H "Content-Type: application/json" \
+  -b cookies.txt
 ```
 
-**测试覆盖**:
-- ✅ 静态资源缓存
-- ✅ 登录/Dashboard 页面
-- ✅ API 端点路由
-- ✅ OpenClaw instance 路由
-- ✅ CloudFront 响应头
+---
+
+## 主要变更
+
+| 之前（Cognito） | 现在（Local Auth） |
+|----------------|-------------------|
+| AWS Cognito User Pool | SQLite 数据库 |
+| JWT token 认证 | Session cookie 认证 |
+| 无注册功能（管理员创建） | 用户自助注册 |
+| python-jose 依赖 | bcrypt + flask-session |
 
 ---
 
-## 预期效果
+## 下一步
 
-| 指标 | API Gateway | CloudFront | 改善 |
-|------|-------------|------------|------|
-| 延迟 (p50) | ~200ms | ~60-80ms | **2.5-3x** ⬆ |
-| 成本 (月) | ~$75 | $0 | **节省 100%** |
-| 架构复杂度 | 高 (双 ALB) | 低 (统一 ALB) | **简化** |
+- 📖 阅读完整文档：[README-LOCAL-AUTH.md](./README-LOCAL-AUTH.md)
+- 🔧 查看迁移详情：[MIGRATION-TO-LOCAL-AUTH.md](./MIGRATION-TO-LOCAL-AUTH.md)
 
----
-
-**详细文档**: [CLOUDFRONT-PROVISIONING-INTEGRATION.md](./CLOUDFRONT-PROVISIONING-INTEGRATION.md)
-
-**脚本位置**: `scripts/`
-- `verify-phase1-alb.sh` - Phase 1 验证（已完成）
-- `update-cloudfront-phase2.sh` - Phase 2 更新
-- `test-cloudfront-phase3.sh` - Phase 3 测试
+**问题？** 查看 [README-LOCAL-AUTH.md](./README-LOCAL-AUTH.md) 的故障排查部分

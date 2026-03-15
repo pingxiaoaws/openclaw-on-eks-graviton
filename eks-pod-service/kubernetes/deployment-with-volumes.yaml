@@ -1,0 +1,149 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-provisioning
+  namespace: openclaw-provisioning
+  labels:
+    app: openclaw-provisioning
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: openclaw-provisioning
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: openclaw-provisioning
+        version: v1
+    spec:
+      serviceAccountName: openclaw-provisioner
+      nodeSelector:
+        # arch: arm64
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000  # 确保 Volume 可写
+        runAsNonRoot: true
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: openclaw-provisioning
+                topologyKey: kubernetes.io/hostname
+
+      # Volume 配置（新增）
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openclaw-provisioning-data
+        - name: sessions
+          persistentVolumeClaim:
+            claimName: openclaw-provisioning-sessions
+
+      containers:
+      - name: provisioning
+        image: ${ECR_REGISTRY}/openclaw-provisioning:latest  # Replace at deploy time or use kustomize
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+
+        # Volume Mounts（新增）
+        volumeMounts:
+          - name: data
+            mountPath: /app/data
+          - name: sessions
+            mountPath: /app/flask_session
+
+        envFrom:
+        - configMapRef:
+            name: openclaw-provisioning-env
+        env:
+        # 数据库和 Session 配置（新增）
+        - name: DATABASE_PATH
+          value: "/app/data/openclaw.db"
+        - name: SESSION_FILE_DIR
+          value: "/app/flask_session"
+
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openclaw-provisioning-secret
+              key: secret-key
+              optional: false  # 生产环境必须提供
+
+        # Pod Identity Configuration
+        - name: USE_POD_IDENTITY
+          value: "true"
+        - name: CREATE_IAM_ROLE_PER_USER
+          value: "false"
+
+        # OpenClaw Instance 配置
+        # - name: OPENCLAW_RUNTIME_CLASS
+        #   value: "kata-fc"  # 留空使用 runc
+        # - name: OPENCLAW_NODE_SELECTOR
+        #   value: '{"workload-type":"kata"}'
+        # - name: OPENCLAW_TOLERATIONS
+        #   value: '[{"key":"kata-dedicated","operator":"Exists","effect":"NoSchedule"}]'
+        - name: OPENCLAW_CPU_REQUEST
+          value: "500m"
+        - name: OPENCLAW_MEMORY_REQUEST
+          value: "1Gi"
+        - name: OPENCLAW_CPU_LIMIT
+          value: "2"
+        - name: OPENCLAW_MEMORY_LIMIT
+          value: "4Gi"
+        - name: OPENCLAW_STORAGE_SIZE
+          value: "10Gi"
+        - name: OPENCLAW_STORAGE_CLASS
+          value: "gp3"
+        - name: OPENCLAW_MODEL
+          value: "bedrock/us.anthropic.claude-opus-4-6-v1:0"
+        - name: OPENCLAW_AWS_CREDENTIALS_SECRET
+          value: "aws-credentials"
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # 需要写入 session 和数据库
+          capabilities:
+            drop:
+              - ALL
