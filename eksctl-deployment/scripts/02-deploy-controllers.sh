@@ -38,36 +38,168 @@ echo "Account: $AWS_ACCOUNT"
 echo ""
 
 # ============================================================================
-# Step 1: Install EFS CSI Driver
+# Step 1: Create EFS CSI Driver IAM Role for Pod Identity
 # ============================================================================
 
-echo -e "${BLUE}[1/7] Installing EFS CSI Driver...${NC}"
+echo -e "${BLUE}[1/8] Creating EFS CSI Driver IAM Role (Pod Identity)...${NC}"
 
-# Check if already installed
-if helm list -n kube-system | grep -q aws-efs-csi-driver; then
-  echo -e "${YELLOW}⚠️  EFS CSI Driver already installed, skipping${NC}"
+EFS_POLICY_NAME="AmazonEKS_EFS_CSI_Driver_Policy"
+EFS_ROLE_NAME="AmazonEKS_EFS_CSI_DriverRole"
+EFS_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
+
+# Create IAM Policy for EFS CSI Driver
+if aws iam get-policy --policy-arn "$EFS_POLICY_ARN" &>/dev/null; then
+  echo -e "${YELLOW}⚠️  EFS CSI Policy already exists${NC}"
 else
-  # Add Helm repo
-  helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver/
-  helm repo update
+  echo "Creating EFS CSI IAM policy..."
+  cat > /tmp/efs-csi-policy.json <<EOFPOLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticfilesystem:DescribeAccessPoints",
+        "elasticfilesystem:DescribeFileSystems",
+        "elasticfilesystem:DescribeMountTargets",
+        "elasticfilesystem:TagResource",
+        "elasticfilesystem:UntagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticfilesystem:CreateAccessPoint"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "aws:RequestTag/efs.csi.aws.com/cluster": "true"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": "elasticfilesystem:DeleteAccessPoint",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/efs.csi.aws.com/cluster": "true"
+        }
+      }
+    }
+  ]
+}
+EOFPOLICY
 
-  # Install EFS CSI Driver
-  helm upgrade --install aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver \
-    --namespace kube-system \
-    --set controller.serviceAccount.create=true \
-    --set controller.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::${AWS_ACCOUNT}:role/AmazonEKS_EFS_CSI_DriverRole" \
-    --wait
+  aws iam create-policy \
+    --policy-name "$EFS_POLICY_NAME" \
+    --policy-document file:///tmp/efs-csi-policy.json \
+    --description "Policy for EFS CSI Driver"
 
-  echo -e "${GREEN}✅ EFS CSI Driver installed${NC}"
+  echo -e "${GREEN}✅ EFS CSI IAM policy created${NC}"
+fi
+
+# Create IAM Role for EFS CSI Driver (Pod Identity)
+if aws iam get-role --role-name "$EFS_ROLE_NAME" &>/dev/null; then
+  echo -e "${YELLOW}⚠️  EFS CSI Role already exists${NC}"
+else
+  echo "Creating EFS CSI IAM role with Pod Identity trust policy..."
+  cat > /tmp/efs-csi-trust-policy.json <<EOFTRUST
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "pods.eks.amazonaws.com"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }
+  ]
+}
+EOFTRUST
+
+  aws iam create-role \
+    --role-name "$EFS_ROLE_NAME" \
+    --assume-role-policy-document file:///tmp/efs-csi-trust-policy.json \
+    --description "IAM role for EFS CSI Driver via Pod Identity"
+
+  aws iam attach-role-policy \
+    --role-name "$EFS_ROLE_NAME" \
+    --policy-arn "$EFS_POLICY_ARN"
+
+  echo -e "${GREEN}✅ EFS CSI IAM role created${NC}"
 fi
 
 echo ""
 
 # ============================================================================
-# Step 2: Create EFS FileSystem and StorageClass
+# Step 2: Install EFS CSI Driver
 # ============================================================================
 
-echo -e "${BLUE}[2/7] Setting up EFS FileSystem...${NC}"
+echo -e "${BLUE}[2/8] Installing EFS CSI Driver...${NC}"
+
+# Check if already installed
+if helm list -n kube-system | grep -q aws-efs-csi-driver; then
+  echo -e "${YELLOW}⚠️  EFS CSI Driver already installed, upgrading...${NC}"
+  helm upgrade aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver \
+    --namespace kube-system \
+    --set controller.serviceAccount.create=true \
+    --set controller.serviceAccount.name=efs-csi-controller-sa \
+    --reuse-values \
+    --wait
+else
+  # Add Helm repo
+  helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver/
+  helm repo update
+
+  # Install EFS CSI Driver (without IRSA annotation, using Pod Identity)
+  helm upgrade --install aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver \
+    --namespace kube-system \
+    --set controller.serviceAccount.create=true \
+    --set controller.serviceAccount.name=efs-csi-controller-sa \
+    --wait
+
+  echo -e "${GREEN}✅ EFS CSI Driver installed${NC}"
+fi
+
+# Create Pod Identity Association
+EFS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
+
+EXISTING_EFS_ASSOC=$(aws eks list-pod-identity-associations \
+  --cluster-name "$CLUSTER_NAME" \
+  --region "$AWS_REGION" \
+  --namespace kube-system \
+  --service-account efs-csi-controller-sa \
+  --query 'associations[0].associationId' \
+  --output text 2>/dev/null || echo "")
+
+if [ -n "$EXISTING_EFS_ASSOC" ] && [ "$EXISTING_EFS_ASSOC" != "None" ]; then
+  echo -e "${YELLOW}⚠️  EFS CSI Pod Identity association already exists: $EXISTING_EFS_ASSOC${NC}"
+else
+  echo "Creating Pod Identity association for EFS CSI Driver..."
+  aws eks create-pod-identity-association \
+    --cluster-name "$CLUSTER_NAME" \
+    --namespace kube-system \
+    --service-account efs-csi-controller-sa \
+    --role-arn "$EFS_ROLE_ARN" \
+    --region "$AWS_REGION"
+
+  echo -e "${GREEN}✅ EFS CSI Pod Identity association created${NC}"
+fi
+
+echo ""
+
+# ============================================================================
+# Step 3: Create EFS FileSystem and StorageClass
+# ============================================================================
+
+echo -e "${BLUE}[3/8] Setting up EFS FileSystem...${NC}"
 
 # Check if EFS already exists
 EFS_ID=$(aws efs describe-file-systems \
@@ -196,10 +328,10 @@ echo -e "${GREEN}✅ gp3 StorageClass created${NC}"
 echo ""
 
 # ============================================================================
-# Step 3: Install AWS Load Balancer Controller
+# Step 4: Install AWS Load Balancer Controller
 # ============================================================================
 
-echo -e "${BLUE}[3/7] Installing AWS Load Balancer Controller...${NC}"
+echo -e "${BLUE}[4/8] Installing AWS Load Balancer Controller...${NC}"
 
 if helm list -n kube-system | grep -q aws-load-balancer-controller; then
   echo -e "${YELLOW}⚠️  ALB Controller already installed, skipping${NC}"
@@ -241,19 +373,19 @@ fi
 echo ""
 
 # ============================================================================
-# Step 4: Install Karpenter (Optional - skip for now)
+# Step 5: Install Karpenter (Optional - skip for now)
 # ============================================================================
 
-echo -e "${BLUE}[4/7] Karpenter (Optional)...${NC}"
+echo -e "${BLUE}[5/8] Karpenter (Optional)...${NC}"
 echo "Skipping Karpenter installation (using Managed Node Groups)"
 echo "To install Karpenter later, see: https://karpenter.sh/docs/getting-started/"
 echo ""
 
 # ============================================================================
-# Step 5: Install EKS Pod Identity
+# Step 6: Install EKS Pod Identity
 # ============================================================================
 
-echo -e "${BLUE}[5/7] Installing EKS Pod Identity...${NC}"
+echo -e "${BLUE}[6/8] Installing EKS Pod Identity...${NC}"
 
 # Check if Pod Identity addon exists
 POD_IDENTITY_STATUS=$(aws eks describe-addon \
@@ -287,10 +419,10 @@ fi
 echo ""
 
 # ============================================================================
-# Step 6: Install Kata Containers (if Kata nodes exist)
+# Step 7: Install Kata Containers (if Kata nodes exist)
 # ============================================================================
 
-echo -e "${BLUE}[6/7] Installing Kata Containers...${NC}"
+echo -e "${BLUE}[7/8] Installing Kata Containers...${NC}"
 
 # Check if Kata nodes exist
 KATA_NODE_COUNT=$(kubectl get nodes -l workload-type=kata --no-headers 2>/dev/null | wc -l | tr -d ' ')
@@ -434,10 +566,10 @@ fi
 echo ""
 
 # ============================================================================
-# Step 7: Create/Verify Kata RuntimeClasses
+# Step 8: Create/Verify Kata RuntimeClasses
 # ============================================================================
 
-echo -e "${BLUE}[7/7] Creating Kata RuntimeClasses...${NC}"
+echo -e "${BLUE}[8/8] Creating Kata RuntimeClasses...${NC}"
 
 if [ "$KATA_NODE_COUNT" -gt 0 ]; then
   # Create Kata RuntimeClasses
