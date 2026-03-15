@@ -17,7 +17,8 @@ const API = {
 
         const config = {
             ...options,
-            headers
+            headers,
+            credentials: 'same-origin'  // Include cookies (session) in requests
         };
 
         // Debug logging
