@@ -1,6 +1,7 @@
 """Main Flask application"""
 from flask import Flask, render_template, send_from_directory
 from flask_session import Session
+from werkzeug.middleware.proxy_fix import ProxyFix
 from kubernetes import config
 import logging
 import os
@@ -111,6 +112,17 @@ def create_app():
     # Setup middlewares
     from app.middleware import setup_middlewares
     setup_middlewares(app)
+
+    # Apply ProxyFix middleware (for CloudFront → ALB → Pod setup)
+    # This allows Flask to correctly identify HTTPS requests from X-Forwarded-Proto header
+    # Critical for SESSION_COOKIE_SECURE to work properly
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,      # Trust X-Forwarded-For (1 proxy)
+        x_proto=1,    # Trust X-Forwarded-Proto (1 proxy) - CRITICAL for HTTPS detection
+        x_host=1,     # Trust X-Forwarded-Host (1 proxy)
+        x_prefix=1    # Trust X-Forwarded-Prefix (1 proxy)
+    )
 
     # Apply WSGI middleware to strip /prod prefix (must be last)
     app.wsgi_app = StripProdPrefixMiddleware(app.wsgi_app)

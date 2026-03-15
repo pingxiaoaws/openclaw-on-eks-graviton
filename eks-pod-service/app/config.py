@@ -23,11 +23,13 @@ class Config:
     SESSION_TYPE = 'filesystem'  # Store sessions on disk
     SESSION_PERMANENT = True
     PERMANENT_SESSION_LIFETIME = 86400 * 7  # 7 days in seconds
-    # Set to False because ALB->Pod communication is HTTP (not HTTPS)
-    # Browser will still send cookie over HTTPS when accessing via CloudFront
-    SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
+
+    # Cookie settings for CloudFront + ALB setup
+    # CRITICAL: Must set SESSION_COOKIE_SECURE=True and SAMESITE='None' for cross-origin requests
+    SESSION_COOKIE_SECURE = True  # Required for SameSite=None (HTTPS only)
     SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to cookie
-    SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
+    SESSION_COOKIE_SAMESITE = 'None'  # Allow cross-site cookie sending (required for CloudFront → ALB)
+    SESSION_COOKIE_DOMAIN = None  # Let Flask use the request's host (CloudFront domain)
 
     # Database
     DATABASE_PATH = os.environ.get('DATABASE_PATH', '/app/data/openclaw.db')
