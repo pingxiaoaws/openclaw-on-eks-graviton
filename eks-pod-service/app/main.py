@@ -34,14 +34,29 @@ def create_app():
     # Load configuration
     app.config.from_object('app.config.Config')
 
-    # Initialize database
+    # Configure SQLAlchemy URI for Flask-Session
+    pg_host = os.environ.get('POSTGRES_HOST', 'postgres')
+    pg_port = os.environ.get('POSTGRES_PORT', '5432')
+    pg_db = os.environ.get('POSTGRES_DB', 'openclaw')
+    pg_user = os.environ.get('POSTGRES_USER', 'openclaw')
+    pg_password = os.environ.get('POSTGRES_PASSWORD', 'OpenClaw2026!SecureDB')
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_db}'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    # Initialize SQLAlchemy for Flask-Session
+    from flask_sqlalchemy import SQLAlchemy
+    db = SQLAlchemy(app)
+    app.config['SESSION_SQLALCHEMY'] = db
+
+    # Initialize database tables (users, sessions, usage_events, etc.)
     from app.database import init_db
     init_db()
-    logger.info("✅ Database initialized")
+    logger.info("✅ Database initialized (including sessions table)")
 
-    # Initialize Flask-Session
+    # Initialize Flask-Session (uses SQLAlchemy)
     Session(app)
-    logger.info("✅ Session management initialized")
+    logger.info("✅ Session management initialized (using PostgreSQL)")
 
     # Initialize Kubernetes client (in-cluster)
     try:

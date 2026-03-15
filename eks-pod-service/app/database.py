@@ -130,6 +130,26 @@ def init_db():
         ON daily_usage(user_id, date)
     ''')
 
+    # Create sessions table for Flask-Session
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sessions (
+            id SERIAL PRIMARY KEY,
+            session_id VARCHAR(255) UNIQUE NOT NULL,
+            data BYTEA,
+            expiry TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sessions_session_id
+        ON sessions(session_id)
+    ''')
+
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sessions_expiry
+        ON sessions(expiry)
+    ''')
+
     conn.commit()
     cursor.close()
     conn.close()

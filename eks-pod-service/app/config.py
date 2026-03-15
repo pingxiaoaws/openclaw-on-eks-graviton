@@ -20,9 +20,13 @@ class Config:
     DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 
     # Session configuration
-    SESSION_TYPE = 'filesystem'  # Store sessions on disk
+    SESSION_TYPE = 'sqlalchemy'  # Store sessions in PostgreSQL
     SESSION_PERMANENT = True
     PERMANENT_SESSION_LIFETIME = 86400 * 7  # 7 days in seconds
+    SESSION_SQLALCHEMY_TABLE = 'sessions'  # Table name for Flask-Session
+
+    # SQLAlchemy connection string for Flask-Session
+    SESSION_SQLALCHEMY = None  # Will be set in main.py after env vars are loaded
 
     # Cookie settings for CloudFront + ALB setup
     # CRITICAL: Must set SESSION_COOKIE_SECURE=True and SAMESITE='None' for cross-origin requests

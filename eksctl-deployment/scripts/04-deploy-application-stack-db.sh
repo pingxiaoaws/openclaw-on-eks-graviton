@@ -211,14 +211,32 @@ fi
 echo ""
 
 # ============================================================================
-# Step 5: Deploy Provisioning Service
+# Step 5: Deploy PostgreSQL Database
 # ============================================================================
 
-echo -e "${BLUE}[5/8] Deploying Provisioning Service...${NC}"
+echo -e "${BLUE}[5/9] Deploying PostgreSQL Database...${NC}"
 
 PROVISIONING_DIR="$(dirname "$0")/../../eks-pod-service"
 
 kubectl create namespace openclaw-provisioning --dry-run=client -o yaml | kubectl apply -f -
+
+echo "Deploying PostgreSQL StatefulSet..."
+kubectl apply -f "$PROVISIONING_DIR/kubernetes/postgres.yaml"
+
+echo "Waiting for PostgreSQL to be ready..."
+kubectl wait --for=condition=ready pod -l app=postgres -n openclaw-provisioning --timeout=300s || {
+  echo -e "${YELLOW}⚠️  PostgreSQL pod not ready yet, checking status...${NC}"
+  kubectl get pods -n openclaw-provisioning -l app=postgres
+}
+
+echo -e "${GREEN}✅ PostgreSQL deployed${NC}"
+echo ""
+
+# ============================================================================
+# Step 6: Deploy Provisioning Service
+# ============================================================================
+
+echo -e "${BLUE}[6/9] Deploying Provisioning Service...${NC}"
 
 echo "Deploying RBAC..."
 kubectl apply -f "$PROVISIONING_DIR/kubernetes/rbac.yaml"
@@ -269,6 +287,26 @@ spec:
           value: "${AWS_REGION}"
         - name: AWS_ACCOUNT_ID
           value: "${AWS_ACCOUNT}"
+        # PostgreSQL Configuration
+        - name: POSTGRES_HOST
+          value: "postgres"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
         resources:
           requests:
             cpu: 250m
@@ -332,10 +370,10 @@ echo -e "${GREEN}✅ Provisioning service deployed${NC}"
 echo ""
 
 # ============================================================================
-# Step 6: Convert ALB to Internet-Facing
+# Step 7: Convert ALB to Internet-Facing
 # ============================================================================
 
-echo -e "${BLUE}[6/8] Converting ALB to Internet-Facing...${NC}"
+echo -e "${BLUE}[7/9] Converting ALB to Internet-Facing...${NC}"
 
 VPC_ID=$(aws eks describe-cluster \
   --name "$CLUSTER_NAME" \
@@ -448,10 +486,10 @@ echo "ALB DNS: $ALB_DNS"
 echo ""
 
 # ============================================================================
-# Step 7: Create CloudFront Distribution
+# Step 8: Create CloudFront Distribution
 # ============================================================================
 
-echo -e "${BLUE}[7/8] Creating CloudFront Distribution...${NC}"
+echo -e "${BLUE}[8/9] Creating CloudFront Distribution...${NC}"
 
 EXISTING_DIST_ID=$(aws cloudfront list-distributions \
   --query "DistributionList.Items[?Comment=='OpenClaw-${CLUSTER_NAME}'].Id" \
@@ -586,10 +624,10 @@ echo "CloudFront Domain: $CLOUDFRONT_DOMAIN"
 echo ""
 
 # ============================================================================
-# Step 8: Update Provisioning Service with CloudFront Config
+# Step 9: Update Provisioning Service with CloudFront Config
 # ============================================================================
 
-echo -e "${BLUE}[8/8] Updating Provisioning Service with CloudFront configuration...${NC}"
+echo -e "${BLUE}[9/9] Updating Provisioning Service with CloudFront configuration...${NC}"
 
 kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
   USE_PUBLIC_ALB=true \
@@ -614,6 +652,7 @@ echo "  ✅ OpenClaw Operator"
 echo "  ✅ Bedrock IAM Policy: $BEDROCK_POLICY_ARN"
 echo "  ✅ Bedrock IAM Role: $BEDROCK_ROLE_ARN"
 echo "  ✅ Pod Identity Association"
+echo "  ✅ PostgreSQL Database: postgres (StatefulSet with gp3 PVC)"
 echo "  ✅ Docker Image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest"
 echo "  ✅ Provisioning Service: openclaw-provisioning (2 replicas)"
 echo "  ✅ Internet-facing ALB: $ALB_DNS"
