@@ -23,7 +23,9 @@ class Config:
     SESSION_TYPE = 'filesystem'  # Store sessions on disk
     SESSION_PERMANENT = True
     PERMANENT_SESSION_LIFETIME = 86400 * 7  # 7 days in seconds
-    SESSION_COOKIE_SECURE = True  # Only send cookie over HTTPS
+    # Set to False because ALB->Pod communication is HTTP (not HTTPS)
+    # Browser will still send cookie over HTTPS when accessing via CloudFront
+    SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
     SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to cookie
     SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
 
