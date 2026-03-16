@@ -637,6 +637,7 @@ fi
 kubectl delete ingress openclaw-provisioning-ingress -n openclaw-provisioning --ignore-not-found=true
 
 echo "Creating provisioning service Ingress (shared ALB group: $SHARED_ALB_GROUP)..."
+# Use specific paths to avoid catch-all conflict with OpenClaw instance /instance/{user_id} routes
 cat <<EOFPUBLIC | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -647,7 +648,6 @@ metadata:
     alb.ingress.kubernetes.io/group.name: ${SHARED_ALB_GROUP}
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/subnets: ${PUBLIC_SUBNETS}
-    alb.ingress.kubernetes.io/security-groups: ${CLOUDFRONT_SG_ID},${ALB_MANAGED_SG}
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /health
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
@@ -667,8 +667,113 @@ spec:
   rules:
   - http:
       paths:
-      - path: /
+      - path: /login
         pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /logout
+        pathType: Exact
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /me
+        pathType: Exact
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /dashboard
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /static
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /provision
+        pathType: Exact
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /status
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /delete
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /register
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /billing
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /admin
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /devices
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /instance
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80
+      - path: /
+        pathType: Exact
         backend:
           service:
             name: openclaw-provisioning
@@ -857,8 +962,7 @@ kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
   CLOUDFRONT_DISTRIBUTION_ID="$CLOUDFRONT_DIST_ID" \
   PUBLIC_ALB_DNS="$ALB_DNS" \
   PUBLIC_ALB_SUBNETS="$PUBLIC_SUBNETS" \
-  PUBLIC_ALB_GROUP_NAME="$SHARED_ALB_GROUP" \
-  PUBLIC_ALB_SECURITY_GROUPS="${CLOUDFRONT_SG_ID},${ALB_MANAGED_SG}"
+  PUBLIC_ALB_GROUP_NAME="$SHARED_ALB_GROUP"
 
 echo "Waiting for rollout..."
 kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning --timeout=300s

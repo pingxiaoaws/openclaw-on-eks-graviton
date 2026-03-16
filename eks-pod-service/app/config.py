@@ -58,7 +58,7 @@ class Config:
         },
         'storage_size': os.environ.get('OPENCLAW_STORAGE_SIZE', '10Gi'),
         'storage_class': os.environ.get('OPENCLAW_STORAGE_CLASS', 'efs-sc'),
-        'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-opus-4-6-v1:0'),
+        'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'),
         'aws_credentials_secret': os.environ.get('OPENCLAW_AWS_CREDENTIALS_SECRET', 'aws-credentials'),
         'image': {
             'repository': os.environ.get('OPENCLAW_IMAGE_REPOSITORY', '970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw'),
@@ -147,7 +147,6 @@ class Config:
         "alb.ingress.kubernetes.io/target-type": "ip",
         "alb.ingress.kubernetes.io/group.name": os.environ.get('PUBLIC_ALB_GROUP_NAME', 'openclaw-shared-instances'),
         "alb.ingress.kubernetes.io/subnets": os.environ.get('PUBLIC_ALB_SUBNETS', ''),
-        "alb.ingress.kubernetes.io/security-groups": os.environ.get('PUBLIC_ALB_SECURITY_GROUPS', ''),
         "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
         "alb.ingress.kubernetes.io/success-codes": "200,404",
         "alb.ingress.kubernetes.io/target-group-attributes": (
