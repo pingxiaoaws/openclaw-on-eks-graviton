@@ -113,6 +113,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             }
         },
         "spec": {
+            "image": config['image'],
             "config": {
                 "raw": config_raw
             },

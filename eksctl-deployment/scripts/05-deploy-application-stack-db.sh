@@ -527,37 +527,6 @@ EOFDEPLOYMENT
 
 kubectl apply -f "$PROVISIONING_DIR/kubernetes/service.yaml"
 
-# Deploy initial internal ALB (will be converted to internet-facing later)
-echo "Deploying initial internal ALB..."
-cat <<EOFINGRESS | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: openclaw-provisioning-ingress
-  namespace: openclaw-provisioning
-  annotations:
-    alb.ingress.kubernetes.io/scheme: internal
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /health
-    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/success-codes: "200"
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-  labels:
-    app: openclaw-provisioning
-spec:
-  ingressClassName: alb
-  rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-EOFINGRESS
-
 echo "Waiting for provisioning service to be ready..."
 kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning --timeout=300s
 
@@ -567,10 +536,11 @@ echo -e "${GREEN}✅ Provisioning service deployed${NC}"
 echo ""
 
 # ============================================================================
-# Step 7: Convert ALB to Internet-Facing
+# Step 7: Create Shared Internet-Facing ALB
 # ============================================================================
 
-echo -e "${BLUE}[7/9] Converting ALB to Internet-Facing...${NC}"
+echo -e "${BLUE}[7/9] Creating Shared Internet-Facing ALB...${NC}"
+echo "All services (provisioning + OpenClaw instances) share one ALB via Ingress group"
 
 VPC_ID=$(aws eks describe-cluster \
   --name "$CLUSTER_NAME" \
@@ -585,9 +555,11 @@ PUBLIC_SUBNETS=$(aws ec2 describe-subnets \
   --output text | tr '\t' ',')
 
 if [ -z "$PUBLIC_SUBNETS" ]; then
-  echo -e "${RED}❌ No public subnets found in VPC${NC}"
+  echo -e "${RED}No public subnets found in VPC${NC}"
   exit 1
 fi
+
+echo "Public subnets: $PUBLIC_SUBNETS"
 
 echo "Creating CloudFront security group..."
 CLOUDFRONT_SG_NAME="openclaw-alb-cloudfront-only"
@@ -600,6 +572,7 @@ EXISTING_SG=$(aws ec2 describe-security-groups \
 
 if [ -n "$EXISTING_SG" ] && [ "$EXISTING_SG" != "None" ]; then
   CLOUDFRONT_SG_ID="$EXISTING_SG"
+  echo "CloudFront security group already exists: $CLOUDFRONT_SG_ID"
 else
   CLOUDFRONT_SG_ID=$(aws ec2 create-security-group \
     --group-name "$CLOUDFRONT_SG_NAME" \
@@ -623,36 +596,39 @@ else
     --resources "$CLOUDFRONT_SG_ID" \
     --tags "Key=Name,Value=$CLOUDFRONT_SG_NAME" \
     --region "$AWS_REGION"
+  echo "CloudFront security group created: $CLOUDFRONT_SG_ID"
 fi
 
-ALB_MANAGED_SG=$(aws ec2 describe-security-groups \
-  --filters "Name=tag:elbv2.k8s.aws/cluster,Values=$CLUSTER_NAME" \
-  --region "$AWS_REGION" \
-  --query 'SecurityGroups[?contains(GroupName, `traffic`)].GroupId' \
-  --output text | head -1)
+SHARED_ALB_GROUP="openclaw-shared-instances"
 
-echo "Deleting internal ALB..."
+# Delete old standalone Ingress if it exists (we now use shared ALB group)
 kubectl delete ingress openclaw-provisioning-ingress -n openclaw-provisioning --ignore-not-found=true
-sleep 30
 
-echo "Creating internet-facing ALB..."
+echo "Creating provisioning service Ingress (shared ALB group: $SHARED_ALB_GROUP)..."
 cat <<EOFPUBLIC | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: openclaw-provisioning-ingress
+  name: openclaw-provisioning-public
   namespace: openclaw-provisioning
   annotations:
+    alb.ingress.kubernetes.io/group.name: ${SHARED_ALB_GROUP}
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/subnets: ${PUBLIC_SUBNETS}
-    alb.ingress.kubernetes.io/security-groups: ${CLOUDFRONT_SG_ID},${ALB_MANAGED_SG}
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /health
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/success-codes: "200"
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/target-group-attributes: >-
+      stickiness.enabled=true,
+      stickiness.type=lb_cookie,
+      stickiness.lb_cookie.duration_seconds=3600,
+      deregistration_delay.timeout_seconds=60,
+      load_balancing.algorithm.type=least_outstanding_requests
   labels:
     app: openclaw-provisioning
+    managed-by: deployment-script
 spec:
   ingressClassName: alb
   rules:
@@ -667,19 +643,26 @@ spec:
               number: 80
 EOFPUBLIC
 
-sleep 90
-
-ALB_DNS=$(kubectl get ingress openclaw-provisioning-ingress -n openclaw-provisioning \
-  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "Waiting for shared ALB to provision (up to 3 minutes)..."
+for i in $(seq 1 18); do
+  ALB_DNS=$(kubectl get ingress openclaw-provisioning-public -n openclaw-provisioning \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+  if [ -n "$ALB_DNS" ]; then
+    break
+  fi
+  echo "  Waiting... ($((i*10))s)"
+  sleep 10
+done
 
 if [ -z "$ALB_DNS" ]; then
-  sleep 60
-  ALB_DNS=$(kubectl get ingress openclaw-provisioning-ingress -n openclaw-provisioning \
-    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+  echo -e "${RED}ALB not provisioned after 3 minutes. Check Ingress events:${NC}"
+  kubectl describe ingress openclaw-provisioning-public -n openclaw-provisioning | tail -10
+  exit 1
 fi
 
-echo -e "${GREEN}✅ ALB converted to internet-facing${NC}"
+echo -e "${GREEN}Shared internet-facing ALB created${NC}"
 echo "ALB DNS: $ALB_DNS"
+echo "ALB Group: $SHARED_ALB_GROUP"
 echo ""
 
 # ============================================================================
@@ -701,15 +684,18 @@ if [ -n "$EXISTING_DIST_ID" ]; then
     --output text)
 
   # Update CloudFront configuration to forward necessary headers for session auth
-  echo "Updating CloudFront configuration (origin + headers)..."
+  # Also update OriginReadTimeout to 60s for WebSocket support
+  echo "Updating CloudFront configuration (origin + headers + timeout)..."
 
   # Get current config and ETag
   aws cloudfront get-distribution-config --id "$CLOUDFRONT_DIST_ID" > /tmp/cf-current.json
   ETAG=$(jq -r '.ETag' /tmp/cf-current.json)
 
-  # Update Origin DomainName (in case ALB DNS changed) AND Headers
+  # Update Origin DomainName (in case ALB DNS changed), Headers, and Timeouts
   jq --arg alb_dns "$ALB_DNS" '
     .DistributionConfig.Origins.Items[0].DomainName = $alb_dns |
+    .DistributionConfig.Origins.Items[0].CustomOriginConfig.OriginReadTimeout = 60 |
+    .DistributionConfig.Origins.Items[0].CustomOriginConfig.OriginKeepaliveTimeout = 60 |
     .DistributionConfig.DefaultCacheBehavior.ForwardedValues.Headers = {
       "Quantity": 8,
       "Items": [
@@ -758,7 +744,9 @@ else
           "OriginSslProtocols": {
             "Quantity": 1,
             "Items": ["TLSv1.2"]
-          }
+          },
+          "OriginReadTimeout": 60,
+          "OriginKeepaliveTimeout": 60
         }
       }
     ]
@@ -834,7 +822,9 @@ kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
   USE_PUBLIC_ALB=true \
   CLOUDFRONT_DOMAIN="$CLOUDFRONT_DOMAIN" \
   CLOUDFRONT_DISTRIBUTION_ID="$CLOUDFRONT_DIST_ID" \
-  PUBLIC_ALB_DNS="$ALB_DNS"
+  PUBLIC_ALB_DNS="$ALB_DNS" \
+  PUBLIC_ALB_SUBNETS="$PUBLIC_SUBNETS" \
+  PUBLIC_ALB_GROUP_NAME="$SHARED_ALB_GROUP"
 
 echo "Waiting for rollout..."
 kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning --timeout=300s
@@ -856,7 +846,7 @@ echo "  ✅ Pod Identity Association"
 echo "  ✅ PostgreSQL Database: postgres (StatefulSet with gp3 PVC)"
 echo "  ✅ Docker Image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest"
 echo "  ✅ Provisioning Service: openclaw-provisioning (2 replicas)"
-echo "  ✅ Internet-facing ALB: $ALB_DNS"
+echo "  ✅ Shared Internet-facing ALB: $ALB_DNS (group: $SHARED_ALB_GROUP)"
 echo "  ✅ CloudFront Distribution: $CLOUDFRONT_DIST_ID"
 echo "  ✅ CloudFront Domain: $CLOUDFRONT_DOMAIN"
 echo ""

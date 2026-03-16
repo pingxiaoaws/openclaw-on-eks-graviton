@@ -71,10 +71,6 @@ def create_app():
             logger.error(f"❌ Failed to load Kubernetes config: {e}")
             raise
 
-    # Ensure keeper ingress exists (for shared ALB)
-    from app.k8s.ingress import ensure_keeper_ingress
-    ensure_keeper_ingress()
-
     # Register blueprints (API endpoints)
     from app.api import register_bp, login_bp, provision_bp, status_bp, delete_bp, health_bp, proxy_bp, devices_bp
     from app.api.billing import billing_bp
