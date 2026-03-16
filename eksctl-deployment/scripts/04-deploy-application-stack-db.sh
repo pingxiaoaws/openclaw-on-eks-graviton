@@ -30,41 +30,42 @@ else
   AWS_REGION=$(echo "$CONTEXT" | grep -o 'us-[a-z]*-[0-9]' || echo "us-east-1")
 fi
 AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+PROVISIONING_DIR="$(dirname "$0")/../../eks-pod-service"
 
 echo "Cluster: $CLUSTER_NAME"
 echo "Region: $AWS_REGION"
 echo "Account: $AWS_ACCOUNT"
 echo ""
 
-# ============================================================================
-# Step 1: Install OpenClaw Operator
-# ============================================================================
+# # ============================================================================
+# # Step 1: Install OpenClaw Operator
+# # ============================================================================
 
-echo -e "${BLUE}[1/9] Installing OpenClaw Operator...${NC}"
+# echo -e "${BLUE}[1/9] Installing OpenClaw Operator...${NC}"
 
-OPERATOR_DIR="$(dirname "$0")/../../openclaw-operator"
-if [ ! -d "$OPERATOR_DIR" ]; then
-  echo -e "${YELLOW}⚠️  Operator directory not found: $OPERATOR_DIR${NC}"
-  echo "Skipping operator installation (deploy manually later)"
-else
-  cd "$OPERATOR_DIR"
+# OPERATOR_DIR="$(dirname "$0")/../../openclaw-operator"
+# if [ ! -d "$OPERATOR_DIR" ]; then
+#   echo -e "${YELLOW}⚠️  Operator directory not found: $OPERATOR_DIR${NC}"
+#   echo "Skipping operator installation (deploy manually later)"
+# else
+#   cd "$OPERATOR_DIR"
 
-  if [ -d "charts/openclaw-operator" ]; then
-    helm upgrade --install openclaw-operator charts/openclaw-operator \
-      --namespace openclaw-operator-system \
-      --create-namespace \
-      --wait
-    echo -e "${GREEN}✅ OpenClaw Operator installed${NC}"
-  else
-    echo "Using kustomize deployment..."
-    kubectl apply -k config/default
-    echo -e "${GREEN}✅ OpenClaw Operator installed (kustomize)${NC}"
-  fi
+#   if [ -d "charts/openclaw-operator" ]; then
+#     helm upgrade --install openclaw-operator charts/openclaw-operator \
+#       --namespace openclaw-operator-system \
+#       --create-namespace \
+#       --wait
+#     echo -e "${GREEN}✅ OpenClaw Operator installed${NC}"
+#   else
+#     echo "Using kustomize deployment..."
+#     kubectl apply -k config/default
+#     echo -e "${GREEN}✅ OpenClaw Operator installed (kustomize)${NC}"
+#   fi
 
-  cd - > /dev/null
-fi
+#   cd - > /dev/null
+# fi
 
-echo ""
+# echo ""
 
 # ============================================================================
 # Step 2: Create Bedrock IAM Policy and Role
@@ -142,10 +143,190 @@ fi
 echo ""
 
 # ============================================================================
-# Step 3: Create Pod Identity Association
+# Step 2.5: Create Provisioning Service IAM Role (for managing user resources)
 # ============================================================================
 
-echo -e "${BLUE}[3/9] Creating Pod Identity Association...${NC}"
+echo -e "${BLUE}[2.5/9] Creating Provisioning Service IAM Role...${NC}"
+
+PROVISIONING_POLICY_NAME="OpenClawProvisioningServicePolicy"
+PROVISIONING_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${PROVISIONING_POLICY_NAME}"
+
+if aws iam get-policy --policy-arn "$PROVISIONING_POLICY_ARN" &>/dev/null; then
+  echo -e "${YELLOW}⚠️  Provisioning service policy already exists, updating...${NC}"
+
+  # Create updated policy document
+  cat > /tmp/provisioning-policy.json <<EOFPOLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageUserIAMRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:TagRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
+    },
+    {
+      "Sid": "PassRoleToServiceAccounts",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole",
+        "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
+      ]
+    },
+    {
+      "Sid": "ManagePodIdentityAssociations",
+      "Effect": "Allow",
+      "Action": [
+        "eks:CreatePodIdentityAssociation",
+        "eks:DeletePodIdentityAssociation",
+        "eks:DescribePodIdentityAssociation",
+        "eks:ListPodIdentityAssociations"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOFPOLICY
+
+  # Create new version and set as default
+  aws iam create-policy-version \
+    --policy-arn "$PROVISIONING_POLICY_ARN" \
+    --policy-document file:///tmp/provisioning-policy.json \
+    --set-as-default > /dev/null
+
+  echo -e "${GREEN}✅ Provisioning service IAM policy updated${NC}"
+else
+  echo "Creating Provisioning Service IAM policy..."
+  cat > /tmp/provisioning-policy.json <<EOFPOLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageUserIAMRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:TagRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
+    },
+    {
+      "Sid": "PassRoleToServiceAccounts",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole",
+        "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
+      ]
+    },
+    {
+      "Sid": "ManagePodIdentityAssociations",
+      "Effect": "Allow",
+      "Action": [
+        "eks:CreatePodIdentityAssociation",
+        "eks:DeletePodIdentityAssociation",
+        "eks:DescribePodIdentityAssociation",
+        "eks:ListPodIdentityAssociations"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOFPOLICY
+
+  aws iam create-policy \
+    --policy-name "$PROVISIONING_POLICY_NAME" \
+    --policy-document file:///tmp/provisioning-policy.json \
+    --description "Allow OpenClaw provisioning service to manage user IAM roles and Pod Identity"
+
+  echo -e "${GREEN}✅ Provisioning service IAM policy created${NC}"
+fi
+
+PROVISIONING_ROLE_NAME="openclaw-provisioning-service"
+
+if aws iam get-role --role-name "$PROVISIONING_ROLE_NAME" &>/dev/null; then
+  echo -e "${YELLOW}⚠️  Provisioning service role already exists${NC}"
+else
+  echo "Creating Provisioning Service IAM role..."
+  cat > /tmp/provisioning-trust-policy.json <<EOFTRUST
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "pods.eks.amazonaws.com"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }
+  ]
+}
+EOFTRUST
+
+  aws iam create-role \
+    --role-name "$PROVISIONING_ROLE_NAME" \
+    --assume-role-policy-document file:///tmp/provisioning-trust-policy.json \
+    --description "IAM role for OpenClaw provisioning service via Pod Identity"
+
+  aws iam attach-role-policy \
+    --role-name "$PROVISIONING_ROLE_NAME" \
+    --policy-arn "$PROVISIONING_POLICY_ARN"
+
+  echo -e "${GREEN}✅ Provisioning service IAM role created${NC}"
+fi
+
+# Create Pod Identity Association for provisioning service
+PROVISIONING_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${PROVISIONING_ROLE_NAME}"
+
+EXISTING_PROV_ASSOC=$(aws eks list-pod-identity-associations \
+  --cluster-name "$CLUSTER_NAME" \
+  --region "$AWS_REGION" \
+  --namespace openclaw-provisioning \
+  --service-account openclaw-provisioner \
+  --query 'associations[0].associationId' \
+  --output text 2>/dev/null || echo "")
+
+if [ -n "$EXISTING_PROV_ASSOC" ] && [ "$EXISTING_PROV_ASSOC" != "None" ]; then
+  echo -e "${YELLOW}⚠️  Provisioning service Pod Identity association already exists: $EXISTING_PROV_ASSOC${NC}"
+else
+  aws eks create-pod-identity-association \
+    --cluster-name "$CLUSTER_NAME" \
+    --namespace openclaw-provisioning \
+    --service-account openclaw-provisioner \
+    --role-arn "$PROVISIONING_ROLE_ARN" \
+    --region "$AWS_REGION"
+
+  echo -e "${GREEN}✅ Provisioning service Pod Identity association created${NC}"
+fi
+
+echo ""
+
+# ============================================================================
+# Step 3: Create Pod Identity Association (for user instances)
+# ============================================================================
+
+echo -e "${BLUE}[3/9] Creating User Instance Pod Identity Association...${NC}"
 
 BEDROCK_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${BEDROCK_ROLE_NAME}"
 
@@ -504,26 +685,30 @@ if [ -n "$EXISTING_DIST_ID" ]; then
     --output text)
 
   # Update CloudFront configuration to forward necessary headers for session auth
-  echo "Updating CloudFront configuration for session cookie support..."
+  echo "Updating CloudFront configuration (origin + headers)..."
 
   # Get current config and ETag
   aws cloudfront get-distribution-config --id "$CLOUDFRONT_DIST_ID" > /tmp/cf-current.json
   ETAG=$(jq -r '.ETag' /tmp/cf-current.json)
 
-  # Update Headers in DefaultCacheBehavior
-  jq '.DistributionConfig.DefaultCacheBehavior.ForwardedValues.Headers = {
-    "Quantity": 8,
-    "Items": [
-      "Host",
-      "Authorization",
-      "Origin",
-      "X-Forwarded-For",
-      "X-Forwarded-Proto",
-      "X-Forwarded-Host",
-      "CloudFront-Forwarded-Proto",
-      "CloudFront-Is-Desktop-Viewer"
-    ]
-  } | .DistributionConfig' /tmp/cf-current.json > /tmp/cf-updated-config.json
+  # Update Origin DomainName (in case ALB DNS changed) AND Headers
+  jq --arg alb_dns "$ALB_DNS" '
+    .DistributionConfig.Origins.Items[0].DomainName = $alb_dns |
+    .DistributionConfig.DefaultCacheBehavior.ForwardedValues.Headers = {
+      "Quantity": 8,
+      "Items": [
+        "Host",
+        "Authorization",
+        "Origin",
+        "X-Forwarded-For",
+        "X-Forwarded-Proto",
+        "X-Forwarded-Host",
+        "CloudFront-Forwarded-Proto",
+        "CloudFront-Is-Desktop-Viewer"
+      ]
+    } |
+    .DistributionConfig
+  ' /tmp/cf-current.json > /tmp/cf-updated-config.json
 
   # Apply update
   aws cloudfront update-distribution \
@@ -531,7 +716,7 @@ if [ -n "$EXISTING_DIST_ID" ]; then
     --distribution-config file:///tmp/cf-updated-config.json \
     --if-match "$ETAG" > /dev/null
 
-  echo -e "${GREEN}✅ CloudFront configuration updated${NC}"
+  echo -e "${GREEN}✅ CloudFront configuration updated (origin: $ALB_DNS)${NC}"
   echo "Waiting for CloudFront distribution to deploy..."
   aws cloudfront wait distribution-deployed --id "$CLOUDFRONT_DIST_ID"
 else
