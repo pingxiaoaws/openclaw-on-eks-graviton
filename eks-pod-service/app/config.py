@@ -59,7 +59,12 @@ class Config:
         'storage_size': os.environ.get('OPENCLAW_STORAGE_SIZE', '10Gi'),
         'storage_class': os.environ.get('OPENCLAW_STORAGE_CLASS', 'efs-sc'),
         'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-opus-4-6-v1:0'),
-        'aws_credentials_secret': os.environ.get('OPENCLAW_AWS_CREDENTIALS_SECRET', 'aws-credentials')
+        'aws_credentials_secret': os.environ.get('OPENCLAW_AWS_CREDENTIALS_SECRET', 'aws-credentials'),
+        'image': {
+            'repository': os.environ.get('OPENCLAW_IMAGE_REPOSITORY', '970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw'),
+            'tag': os.environ.get('OPENCLAW_IMAGE_TAG', '2026.3.14'),
+            'pullPolicy': os.environ.get('OPENCLAW_IMAGE_PULL_POLICY', 'IfNotPresent')
+        }
     }
 
     # ResourceQuota 限制
@@ -119,8 +124,11 @@ class Config:
     PUBLIC_ALB_DNS = os.environ.get('PUBLIC_ALB_DNS', '')
     PUBLIC_ALB_GROUP_NAME = os.environ.get('PUBLIC_ALB_GROUP_NAME', 'openclaw-shared-instances')
 
-    # Public ALB 子网配置（4 AZs: us-west-2a/b/c/d）
+    # Public ALB 子网配置
     PUBLIC_ALB_SUBNETS = os.environ.get('PUBLIC_ALB_SUBNETS', '')
+
+    # Public ALB 安全组（CloudFront SG + ALB managed SG，由部署脚本设置）
+    PUBLIC_ALB_SECURITY_GROUPS = os.environ.get('PUBLIC_ALB_SECURITY_GROUPS', '')
 
     # Gateway 配置（allowedOrigins + trustedProxies）
     GATEWAY_CONFIG = {
@@ -133,11 +141,13 @@ class Config:
     }
 
     # Public ALB Ingress annotations（共享 ALB 模式）
+    # Instance Ingress must match provisioning-public Ingress: same group, scheme, subnets, security-groups
     PUBLIC_ALB_INGRESS_ANNOTATIONS = {
         "alb.ingress.kubernetes.io/scheme": "internet-facing",
         "alb.ingress.kubernetes.io/target-type": "ip",
         "alb.ingress.kubernetes.io/group.name": os.environ.get('PUBLIC_ALB_GROUP_NAME', 'openclaw-shared-instances'),
         "alb.ingress.kubernetes.io/subnets": os.environ.get('PUBLIC_ALB_SUBNETS', ''),
+        "alb.ingress.kubernetes.io/security-groups": os.environ.get('PUBLIC_ALB_SECURITY_GROUPS', ''),
         "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
         "alb.ingress.kubernetes.io/success-codes": "200,404",
         "alb.ingress.kubernetes.io/target-group-attributes": (
