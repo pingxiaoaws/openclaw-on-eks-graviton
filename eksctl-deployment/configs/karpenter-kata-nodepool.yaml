@@ -1,0 +1,67 @@
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: kata-metal
+spec:
+  # Template for node provisioning
+  template:
+    metadata:
+      labels:
+        workload-type: kata
+        katacontainers.io/kata-runtime: "true"
+        arch: arm64
+        os: ubuntu
+        managed-by: karpenter
+
+    spec:
+      # Node class reference
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: kata-metal
+
+      # Taints to dedicate nodes for Kata workloads
+      taints:
+        - key: kata-dedicated
+          value: "true"
+          effect: NoSchedule
+
+      # Requirements for node selection
+      requirements:
+        # Architecture
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["arm64"]
+
+        # Operating System
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+
+        # Instance types - ONLY c6g.metal for Kata
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["c6g.metal"]
+
+        # Capacity type - on-demand only for bare metal
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+
+        # Zone distribution
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+      expireAfter: 720h  # 30 days
+
+  # Limits for the node pool
+  limits:
+    cpu: "192"     # Max 3x c6g.metal (64 vCPUs each)
+    memory: 384Gi  # Max 3x c6g.metal (128GB each)
+
+  # Disruption budget - more conservative for Kata
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 30m

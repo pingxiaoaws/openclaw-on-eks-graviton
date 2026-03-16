@@ -1,0 +1,64 @@
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: standard-arm64
+spec:
+  # Template for node provisioning
+  template:
+    metadata:
+      labels:
+        workload-type: standard
+        node-class: system
+        arch: arm64
+        managed-by: karpenter
+
+    spec:
+      # Node class reference
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: standard-arm64
+
+      # Requirements for node selection
+      requirements:
+        # Architecture
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["arm64"]
+
+        # Operating System
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+
+        # Instance types - ARM64 Graviton
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["m6g", "m6gd", "m7g", "m7gd"]
+
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["xlarge", "2xlarge", "4xlarge"]
+
+        # Capacity type
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]  # Can add "spot" for cost savings
+
+        # Zone distribution
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+      expireAfter: 720h  # 30 days
+
+  # Limits for the node pool
+  limits:
+    cpu: "32"      # Max 32 vCPUs across all nodes in this pool
+    memory: 128Gi  # Max 128GB RAM
+
+  # Disruption budget
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m

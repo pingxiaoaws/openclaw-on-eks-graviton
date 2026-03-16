@@ -48,7 +48,7 @@ rules:
   # Pod exec (for device pairing API)
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["create"]
+    verbs: ["create", "get"]
 
   # Endpoints queries (for readiness checking)
   - apiGroups: [""]

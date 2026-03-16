@@ -1,0 +1,62 @@
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: standard-arm64
+spec:
+  # AMI Selection - Amazon Linux 2023 ARM64
+  amiSelectorTerms:
+    - alias: al2023@latest
+
+  # AMI Family for bootstrap scripts
+  amiFamily: AL2023
+
+  # Instance Profile for nodes (will be created by Karpenter)
+  role: KarpenterNodeRole-openclaw-prod
+
+  # Subnet selection - use private subnets
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: openclaw-prod
+        aws:cloudformation:logical-id: SubnetPrivate*
+
+  # Security Group selection
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: openclaw-prod
+        aws:eks:cluster-name: openclaw-prod
+
+  # Block device mappings
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 100Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
+
+  # User data for additional setup
+  userData: |
+    #!/bin/bash
+    set -e
+
+    # Standard node initialization
+    echo "Initializing standard Graviton node..."
+
+    # Install additional tools if needed
+    # yum install -y <packages>
+
+  # Tags for AWS resources
+  tags:
+    Name: openclaw-standard-karpenter
+    Environment: production
+    Project: openclaw-multi-tenant
+    ManagedBy: karpenter
+    NodeClass: standard
+
+  # Metadata options
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 2
+    httpTokens: required

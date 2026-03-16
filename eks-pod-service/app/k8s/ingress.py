@@ -40,30 +40,48 @@ def ensure_keeper_ingress():
         # Create keeper ingress
         logger.info(f"📝 Creating keeper ingress '{keeper_name}'...")
 
+        # Use the same scheme as user instances (Public ALB if enabled)
+        if Config.USE_PUBLIC_ALB:
+            scheme = "internet-facing"
+            group_name = Config.PUBLIC_ALB_GROUP_NAME
+            subnets = Config.PUBLIC_ALB_SUBNETS
+            logger.info(f"   Using Public ALB mode: scheme={scheme}, group={group_name}")
+        else:
+            scheme = Config.INGRESS_SCHEME
+            group_name = Config.INGRESS_GROUP_NAME
+            subnets = ""
+            logger.info(f"   Using Internal ALB mode: scheme={scheme}, group={group_name}")
+
+        annotations = {
+            # Share the same ALB as OpenClaw instances
+            "alb.ingress.kubernetes.io/group.name": group_name,
+            "alb.ingress.kubernetes.io/scheme": scheme,
+            "alb.ingress.kubernetes.io/target-type": Config.INGRESS_TARGET_TYPE,
+            # Health check to a valid endpoint
+            "alb.ingress.kubernetes.io/healthcheck-path": "/health",
+            "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
+            "alb.ingress.kubernetes.io/success-codes": "200",
+            # Target Group Attributes - WebSocket optimization
+            "alb.ingress.kubernetes.io/target-group-attributes": (
+                "stickiness.enabled=true,"
+                "stickiness.type=lb_cookie,"
+                "stickiness.lb_cookie.duration_seconds=3600,"
+                "deregistration_delay.timeout_seconds=60,"
+                "load_balancing.algorithm.type=least_outstanding_requests"
+            ),
+        }
+
+        # Add subnets annotation for Public ALB
+        if subnets:
+            annotations["alb.ingress.kubernetes.io/subnets"] = subnets
+
         ingress = client.V1Ingress(
             api_version="networking.k8s.io/v1",
             kind="Ingress",
             metadata=client.V1ObjectMeta(
                 name=keeper_name,
                 namespace=keeper_namespace,
-                annotations={
-                    # Share the same ALB as OpenClaw instances
-                    "alb.ingress.kubernetes.io/group.name": Config.INGRESS_GROUP_NAME,
-                    "alb.ingress.kubernetes.io/scheme": Config.INGRESS_SCHEME,
-                    "alb.ingress.kubernetes.io/target-type": Config.INGRESS_TARGET_TYPE,
-                    # Health check to a valid endpoint
-                    "alb.ingress.kubernetes.io/healthcheck-path": "/health",
-                    "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
-                    "alb.ingress.kubernetes.io/success-codes": "200",
-                    # Target Group Attributes - WebSocket optimization
-                    "alb.ingress.kubernetes.io/target-group-attributes": (
-                        "stickiness.enabled=true,"
-                        "stickiness.type=lb_cookie,"
-                        "stickiness.lb_cookie.duration_seconds=3600,"
-                        "deregistration_delay.timeout_seconds=60,"
-                        "load_balancing.algorithm.type=least_outstanding_requests"
-                    ),
-                },
+                annotations=annotations,
                 labels={
                     "app": "openclaw-instances-keeper",
                     "managed-by": "openclaw-provisioning",
