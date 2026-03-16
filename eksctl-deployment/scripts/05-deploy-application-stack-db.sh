@@ -185,6 +185,14 @@ if aws iam get-policy --policy-arn "$PROVISIONING_POLICY_ARN" &>/dev/null; then
       ]
     },
     {
+      "Sid": "GetSharedBedrockRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole"
+      ],
+      "Resource": "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole"
+    },
+    {
       "Sid": "ManagePodIdentityAssociations",
       "Effect": "Allow",
       "Action": [
@@ -236,6 +244,14 @@ else
         "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole",
         "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
       ]
+    },
+    {
+      "Sid": "GetSharedBedrockRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole"
+      ],
+      "Resource": "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole"
     },
     {
       "Sid": "ManagePodIdentityAssociations",
