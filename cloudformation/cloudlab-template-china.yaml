@@ -1369,8 +1369,8 @@ Resources:
       SecurityGroupIngress:
         - Description: Allow HTTP from ALB
           IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
+          FromPort: 8889
+          ToPort: 8889
           SourceSecurityGroupId: !Ref IdeALBSecurityGroup
       SecurityGroupEgress:
         - Description: Allow all outbound traffic
@@ -1386,10 +1386,10 @@ Resources:
     Properties:
       GroupDescription: Security group for IDE ALB
       SecurityGroupIngress:
-        - Description: Allow HTTP from anywhere
+        - Description: Allow code-server from anywhere
           IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
+          FromPort: 8889
+          ToPort: 8889
           CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         - Description: Allow all outbound traffic
@@ -1660,17 +1660,22 @@ Resources:
                     rm -rf /tmp/aws /tmp/awscliv2.zip
                   fi
 
-                  # Install kubectl
-                  curl -fsSL "https://dl.k8s.io/release/v1.34.0/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
+                  # Install kubectl (from China S3 bucket)
+                  aws s3 cp s3://openclaw-cfn-cn-north-1/tools/kubectl /usr/local/bin/kubectl --region cn-north-1
                   chmod +x /usr/local/bin/kubectl
 
-                  # Install helm
-                  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+                  # Install helm (from China S3 bucket)
+                  aws s3 cp s3://openclaw-cfn-cn-north-1/tools/helm.tar.gz /tmp/helm.tar.gz --region cn-north-1
+                  tar xzf /tmp/helm.tar.gz -C /tmp
+                  mv /tmp/linux-amd64/helm /usr/local/bin/helm
+                  chmod +x /usr/local/bin/helm
+                  rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
 
-                  # Install eksctl
-                  ARCH=amd64
-                  PLATFORM=$(uname -s)_$ARCH
-                  curl -fsSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz" | tar xz -C /usr/local/bin
+                  # Install eksctl (from China S3 bucket)
+                  aws s3 cp s3://openclaw-cfn-cn-north-1/tools/eksctl.tar.gz /tmp/eksctl.tar.gz --region cn-north-1
+                  tar xzf /tmp/eksctl.tar.gz -C /usr/local/bin
+                  chmod +x /usr/local/bin/eksctl
+                  rm -f /tmp/eksctl.tar.gz
 
                   # Custom prompt
                   tee /etc/profile.d/openclaw_env.sh <<'EOF'
@@ -1688,7 +1693,7 @@ Resources:
                   # Install code-server
                   codeServer=$(rpm -qa code-server | wc -l)
                   if [ "$codeServer" -eq "0" ]; then
-                    curl -Ls -o /tmp/coder.rpm https://github.com/coder/code-server/releases/download/v${CodeServerVersion}/code-server-${CodeServerVersion}-amd64.rpm
+                    aws s3 cp s3://openclaw-cfn-cn-north-1/tools/code-server.rpm /tmp/coder.rpm --region cn-north-1
                     sudo rpm -U "/tmp/coder.rpm"
                     sudo systemctl enable --now code-server@ec2-user
                   fi
@@ -1811,15 +1816,17 @@ Resources:
 
                   response = ssm.send_command(
                       InstanceIds=[instance_id],
-                      DocumentName=ssm_document
+                      DocumentName=ssm_document,
+                      TimeoutSeconds=1800
                   )
                   command_id = response['Command']['CommandId']
 
+                  # Wait up to 13 minutes (leave buffer for Lambda 15min limit)
                   waiter = ssm.get_waiter('command_executed')
                   waiter.wait(
                       CommandId=command_id,
                       InstanceId=instance_id,
-                      WaiterConfig={'Delay': 10, 'MaxAttempts': 90}
+                      WaiterConfig={'Delay': 15, 'MaxAttempts': 52}
                   )
 
                   responseData = {'Success': f'Bootstrapped instance: {instance_id}'}
@@ -1912,7 +1919,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       LoadBalancerArn: !Ref IdeALB
-      Port: 80
+      Port: 8889
       Protocol: HTTP
       DefaultActions:
         - Type: forward
@@ -1997,7 +2004,7 @@ Outputs:
   # --- IDE Outputs ---
   IdeUrl:
     Description: IDE URL (code-server via ALB)
-    Value: !Sub 'http://${IdeALB.DNSName}'
+    Value: !Sub 'http://${IdeALB.DNSName}:8889'
 
   IdePasswordConsoleUrl:
     Description: AWS Console link to IDE password secret

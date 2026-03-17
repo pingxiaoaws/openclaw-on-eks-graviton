@@ -20,12 +20,14 @@ NC='\033[0m' # No Color
 echo -e "${BLUE}=== Phase 3: Complete Application Stack Deployment ===${NC}"
 echo ""
 
-# Get cluster info
-CONTEXT=$(kubectl config current-context)
-if [[ "$CONTEXT" == arn:aws:eks:* ]]; then
-  AWS_REGION=$(echo "$CONTEXT" | cut -d':' -f4)
-  CLUSTER_NAME=$(echo "$CONTEXT" | cut -d'/' -f2)
+# Get cluster info (resolve from cluster ARN, not context name which may be an alias)
+CLUSTER_ARN=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')
+if [[ "$CLUSTER_ARN" == arn:aws:eks:* ]]; then
+  AWS_REGION=$(echo "$CLUSTER_ARN" | cut -d':' -f4)
+  CLUSTER_NAME=$(echo "$CLUSTER_ARN" | cut -d'/' -f2)
 else
+  # Fallback: try context name
+  CONTEXT=$(kubectl config current-context)
   CLUSTER_NAME=$(echo "$CONTEXT" | cut -d'@' -f2 | cut -d'.' -f1)
   AWS_REGION=$(echo "$CONTEXT" | grep -o 'us-[a-z]*-[0-9]' || echo "us-east-1")
 fi
