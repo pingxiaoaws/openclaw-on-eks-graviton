@@ -90,7 +90,11 @@ else
         "bedrock:InvokeModel",
         "bedrock:InvokeModelWithResponseStream"
       ],
-      "Resource": "arn:aws:bedrock:*:*:model/*"
+      "Resource": [
+        "arn:aws:bedrock:*:*:model/*",
+        "arn:aws:bedrock:*:*:inference-profile/*",
+        "arn:aws:bedrock:*::foundation-model/*"
+      ]
     }
   ]
 }
