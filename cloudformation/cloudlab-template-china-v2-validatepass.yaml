@@ -1,9 +1,15 @@
 AWSTemplateFormatVersion: '2010-09-09'
+
+########################################
+# OpenClaw EKS on Kata Containers - CloudLab Template (China Region)
+# Pre-provisions: VPC, EKS cluster, managed node group, EFS, Karpenter IAM,
+# ALB Controller IAM, and a browser-based code-server IDE on EC2 behind ALB.
+# Lab user operates the EKS cluster via the IDE to deploy workloads.
+########################################
 Description: >
-  OpenClaw EKS Full-Stack Infrastructure.
-  Provisions VPC, EKS cluster, managed node group, EFS, and IAM roles for
-  ALB Controller and Karpenter. Helm charts (EFS CSI, ALB Controller,
-  Karpenter) must be installed post-deploy using values from Outputs.
+  OpenClaw EKS on Kata Containers Lab (China).
+  Provisions complete EKS infrastructure with browser IDE.
+  Lab users use the IDE to install Helm charts, deploy workloads, and manage the cluster.
 
 # =============================================================================
 # Parameters
@@ -17,8 +23,8 @@ Parameters:
   KubernetesVersion:
     Type: String
     Default: '1.34'
-    AllowedValues: ['1.32', '1.33', '1.34']
-    Description: EKS Kubernetes version
+    AllowedValues: ['1.31', '1.32', '1.33', '1.34']
+    Description: EKS Kubernetes version (verify availability in your China region)
 
   VpcCIDR:
     Type: String
@@ -28,12 +34,12 @@ Parameters:
 
   AvailabilityZones:
     Type: List<AWS::EC2::AvailabilityZone::Name>
-    Description: Three availability zones (e.g. us-east-1a, us-east-1b, us-east-1c)
+    Description: Three availability zones (e.g. cn-northwest-1a, cn-northwest-1b, cn-northwest-1c)
 
   SystemNodeInstanceTypes:
     Type: String
     Default: m6g.xlarge
-    Description: Instance type for the managed system node group (ARM64 Graviton)
+    Description: Instance type for the managed system node group
 
   SystemNodeDesiredCapacity:
     Type: Number
@@ -68,11 +74,147 @@ Parameters:
     Default: '1.9.0'
     Description: Karpenter version (used for naming only; Helm install is post-deploy)
 
+  OIDCThumbprint:
+    Type: String
+    Default: '9e99a48a9960b14926bb7f3b02e22da2b0ab7280'
+    Description: >
+      OIDC provider thumbprint. Retrieve for China region via:
+      openssl s_client -connect oidc.eks.<region>.amazonaws.com.cn:443
+      -servername oidc.eks.<region>.amazonaws.com.cn 2>/dev/null |
+      openssl x509 -fingerprint -noout | sed 's/://g' | cut -d= -f2 | tr 'A-F' 'a-f'
+
+  NodeAmiType:
+    Type: String
+    Default: AL2023_ARM_64_STANDARD
+    AllowedValues:
+      - AL2023_ARM_64_STANDARD
+      - AL2023_x86_64_STANDARD
+    Description: >
+      AMI type for system nodes. Use AL2023_ARM_64_STANDARD for Graviton (m6g/m7g),
+      AL2023_x86_64_STANDARD for x86 (m5/m6i) if Graviton not available in region.
+
+  # --- IDE Parameters ---
+  IdeInstanceType:
+    Type: String
+    Default: t3.medium
+    Description: EC2 instance type for IDE
+
+  IdeVolumeSize:
+    Type: Number
+    Default: 30
+    Description: IDE EBS volume size in GB
+
+  IdeAmiParameterStoreName:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+
+  CodeServerVersion:
+    Type: String
+    Default: "4.91.1"
+    Description: code-server version
 
 # =============================================================================
 # Resources
 # =============================================================================
 Resources:
+
+  # TrialUseOnlyRole created by Cloudlab for user lab access, please do not modify
+  TrialUseOnlyRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Delete
+    Properties:
+      RoleName: TrialUseOnly-ContentGeneratedByGenAIDoesNotRepresentViewsOfAWS
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudlabDelegateAssumeThisRole
+            Effect: Allow
+            Principal:
+              AWS:
+                - arn:aws-cn:iam::677075790420:root
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: TrialUseOnlyRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Sid: MinimalPermissionsForTrialUseOnlyRole
+                ########################################
+                # 实验过程中所需的最小权限请在这里添加
+                ########################################
+                Action:
+                  # EKS - view and operate cluster
+                  - eks:DescribeCluster
+                  - eks:ListClusters
+                  - eks:ListNodegroups
+                  - eks:DescribeNodegroup
+                  - eks:ListAddons
+                  - eks:DescribeAddon
+                  - eks:AccessKubernetesApi
+                  # EC2 - view instances, VPC, subnets
+                  - ec2:Describe*
+                  - ec2:Get*
+                  - ec2:List*
+                  # EFS - view file systems
+                  - elasticfilesystem:Describe*
+                  # ELB - view load balancers
+                  - elasticloadbalancing:Describe*
+                  # ECR - view repositories
+                  - ecr:DescribeRepositories
+                  - ecr:ListTagsForResource
+                  - ecr:GetAuthorizationToken
+                  # IAM - view roles and policies
+                  - iam:GetRole
+                  - iam:ListRoles
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                  - iam:GetInstanceProfile
+                  - iam:ListInstanceProfilesForRole
+                  - iam:GetOpenIDConnectProvider
+                  - iam:ListOpenIDConnectProviders
+                  # CloudFormation - view stack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:GetTemplate
+                  - cloudformation:ListStacks
+                  # STS
+                  - sts:GetCallerIdentity
+                  # SSM - Session Manager access to IDE
+                  - ssm:StartSession
+                  - ssm:TerminateSession
+                  - ssm:ResumeSession
+                  - ssm:DescribeSessions
+                  - ssm:DescribeInstanceInformation
+                  # Secrets Manager - retrieve IDE password
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:ListSecrets
+                  # CloudWatch Logs - view logs
+                  - logs:Describe*
+                  - logs:Get*
+                  - logs:List*
+                  - logs:FilterLogEvents
+                  # SQS - view queues
+                  - sqs:GetQueueAttributes
+                  - sqs:ListQueues
+                  # S3 - read artifacts
+                  - s3:GetObject
+                  - s3:ListBucket
+                  # KMS - view keys
+                  - kms:Describe*
+                  - kms:List*
+                  # AutoScaling - view
+                  - autoscaling:Describe*
+                Resource:
+                  - '*'
+                  ########################################
+                  # 实验所用资源请在这里添加
+                  ########################################
 
   # ===========================================================================
   # 1. Networking
@@ -351,7 +493,7 @@ Resources:
         - Key: Project
           Value: openclaw-multi-tenant
 
-  # --- OIDC Provider ---
+  # --- OIDC Provider (China: uses parameterized thumbprint) ---
 
   OIDCProvider:
     Type: AWS::IAM::OIDCProvider
@@ -361,7 +503,7 @@ Resources:
       ClientIdList:
         - sts.amazonaws.com
       ThumbprintList:
-        - '9e99a48a9960b14926bb7f3b02e22da2b0ab7280'
+        - !Ref OIDCThumbprint
       Tags:
         - Key: Name
           Value: !Sub '${ClusterName}-oidc'
@@ -431,7 +573,7 @@ Resources:
         - !Ref PrivateSubnet3
       InstanceTypes:
         - !Ref SystemNodeInstanceTypes
-      AmiType: AL2023_ARM_64_STANDARD
+      AmiType: !Ref NodeAmiType
       ScalingConfig:
         DesiredSize: !Ref SystemNodeDesiredCapacity
         MinSize: !Ref SystemNodeMinSize
@@ -442,7 +584,6 @@ Resources:
       Labels:
         workload-type: standard
         node-class: system
-        arch: arm64
       Tags:
         Name: !Sub '${ClusterName}-standard-node'
 
@@ -465,6 +606,18 @@ Resources:
       ClusterName: !Ref ClusterName
       PrincipalArn: !GetAtt KarpenterNodeRole.Arn
       Type: EC2_LINUX
+
+  IdeAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt IdeRole.Arn
+      Type: STANDARD
+      AccessPolicies:
+        - PolicyArn: !Sub 'arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy'
+          AccessScope:
+            Type: cluster
 
   # ===========================================================================
   # 4. EKS Add-ons
@@ -679,7 +832,6 @@ Resources:
             Resource: '*'
           - Effect: Allow
             Action:
-              - cognito-idp:DescribeUserPoolClient
               - acm:ListCertificates
               - acm:DescribeCertificate
               - iam:ListServerCertificates
@@ -692,10 +844,6 @@ Resources:
               - wafv2:GetWebACLForResource
               - wafv2:AssociateWebACL
               - wafv2:DisassociateWebACL
-              - shield:GetSubscriptionState
-              - shield:DescribeProtection
-              - shield:CreateProtection
-              - shield:DeleteProtection
             Resource: '*'
           - Effect: Allow
             Action:
@@ -1170,10 +1318,585 @@ Resources:
         - Id: KarpenterInterruptionQueueTarget
           Arn: !GetAtt KarpenterInterruptionQueue.Arn
 
+  # ===========================================================================
+  # 8. IDE - Security Group (allows HTTP from anywhere, no CloudFront in China)
+  # ===========================================================================
+
+  IdeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for OpenClaw IDE
+      SecurityGroupIngress:
+        - Description: Allow HTTP from ALB
+          IpProtocol: tcp
+          FromPort: 8889
+          ToPort: 8889
+          SourceSecurityGroupId: !Ref IdeALBSecurityGroup
+      SecurityGroupEgress:
+        - Description: Allow all outbound traffic
+          IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-ide-sg'
+
+  IdeALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for IDE ALB
+      SecurityGroupIngress:
+        - Description: Allow code-server from anywhere
+          IpProtocol: tcp
+          FromPort: 8889
+          ToPort: 8889
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - Description: Allow all outbound traffic
+          IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-ide-alb-sg'
+
+  # ===========================================================================
+  # 9. IDE - IAM Role
+  # ===========================================================================
+
+  IdeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ClusterName}-ide-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ssm.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: ide-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: !Ref IdePassword
+
+  IdeEksPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ClusterName}-ide-eks'
+      Roles:
+        - !Ref IdeRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EKSFullAccess
+            Effect: Allow
+            Action:
+              - eks:*
+            Resource: "*"
+          - Sid: IAMForServiceAccounts
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:ListRoles
+              - iam:TagRole
+              - iam:PassRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:ListAttachedRolePolicies
+              - iam:ListRolePolicies
+              - iam:ListInstanceProfilesForRole
+              - iam:CreatePolicy
+              - iam:DeletePolicy
+              - iam:GetPolicy
+              - iam:GetPolicyVersion
+              - iam:ListPolicyVersions
+              - iam:TagPolicy
+              - iam:CreateOpenIDConnectProvider
+              - iam:DeleteOpenIDConnectProvider
+              - iam:GetOpenIDConnectProvider
+              - iam:ListOpenIDConnectProviders
+              - iam:TagOpenIDConnectProvider
+              - iam:CreateInstanceProfile
+              - iam:DeleteInstanceProfile
+              - iam:GetInstanceProfile
+              - iam:AddRoleToInstanceProfile
+              - iam:RemoveRoleFromInstanceProfile
+              - iam:TagInstanceProfile
+              - iam:CreateServiceLinkedRole
+            Resource: "*"
+          - Sid: EC2Describe
+            Effect: Allow
+            Action:
+              - ec2:Describe*
+              - ec2:Get*
+              - ec2:List*
+              - ec2:CreateTags
+              - ec2:DeleteTags
+              - ec2:RunInstances
+              - ec2:TerminateInstances
+              - ec2:CreateSecurityGroup
+              - ec2:DeleteSecurityGroup
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupIngress
+              - ec2:CreateLaunchTemplate
+              - ec2:DeleteLaunchTemplate
+            Resource: "*"
+          - Sid: ECR
+            Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:CreateRepository
+              - ecr:DeleteRepository
+              - ecr:DescribeRepositories
+              - ecr:ListTagsForResource
+              - ecr:TagResource
+              - ecr:PutImage
+              - ecr:InitiateLayerUpload
+              - ecr:UploadLayerPart
+              - ecr:CompleteLayerUpload
+            Resource: "*"
+          - Sid: EFSManagement
+            Effect: Allow
+            Action:
+              - elasticfilesystem:Describe*
+              - elasticfilesystem:Create*
+              - elasticfilesystem:Delete*
+              - elasticfilesystem:TagResource
+            Resource: "*"
+          - Sid: CloudFormation
+            Effect: Allow
+            Action:
+              - cloudformation:*
+            Resource: "*"
+          - Sid: STS
+            Effect: Allow
+            Action:
+              - sts:GetCallerIdentity
+              - sts:AssumeRole
+              - sts:GetServiceBearerToken
+            Resource: "*"
+          - Sid: SSMParameters
+            Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:GetParameters
+              - ssm:DescribeParameters
+            Resource: "*"
+          - Sid: ELB
+            Effect: Allow
+            Action:
+              - elasticloadbalancing:Describe*
+              - elasticloadbalancing:Get*
+            Resource: "*"
+          - Sid: AutoScaling
+            Effect: Allow
+            Action:
+              - autoscaling:Describe*
+            Resource: "*"
+          - Sid: CloudWatchLogs
+            Effect: Allow
+            Action:
+              - logs:Describe*
+              - logs:Get*
+              - logs:List*
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:PutRetentionPolicy
+            Resource: "*"
+          - Sid: SecretsManager
+            Effect: Allow
+            Action:
+              - secretsmanager:CreateSecret
+              - secretsmanager:DeleteSecret
+              - secretsmanager:DescribeSecret
+              - secretsmanager:GetSecretValue
+              - secretsmanager:ListSecrets
+              - secretsmanager:TagResource
+              - secretsmanager:PutSecretValue
+            Resource: "*"
+          - Sid: SQS
+            Effect: Allow
+            Action:
+              - sqs:*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ClusterName}*'
+          - Sid: Bedrock
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+              - bedrock:ListFoundationModels
+              - bedrock:GetFoundationModel
+            Resource: "*"
+          - Sid: S3ForHelm
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:ListBucket
+            Resource: "*"
+          - Sid: KMS
+            Effect: Allow
+            Action:
+              - kms:Describe*
+              - kms:List*
+              - kms:Get*
+            Resource: "*"
+          - Sid: Pricing
+            Effect: Allow
+            Action:
+              - pricing:GetProducts
+            Resource: "*"
+
+  IdeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref IdeRole
+
+  # ===========================================================================
+  # 10. IDE - Secrets Manager (password)
+  # ===========================================================================
+
+  IdePassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ClusterName}-ide-password'
+      GenerateSecretString:
+        ExcludeCharacters: "\"@/\\"
+        ExcludePunctuation: true
+        GenerateStringKey: password
+        IncludeSpace: false
+        PasswordLength: 32
+        SecretStringTemplate: '{"password":""}'
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+
+  # ===========================================================================
+  # 11. IDE - SSM Document (bootstrap script - no Caddy/CloudFront, direct code-server)
+  # ===========================================================================
+
+  IdeSSMDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      DocumentFormat: YAML
+      Content:
+        schemaVersion: "2.2"
+        description: Bootstrap IDE instance with tools and code-server
+        mainSteps:
+          - action: aws:runShellScript
+            name: BootstrapIDE
+            inputs:
+              runCommand:
+                - !Sub |
+                  set -e
+
+                  # Install system packages
+                  yum install -y git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip
+
+                  # Install AWS CLI v2
+                  if ! command -v aws &>/dev/null || [[ $(aws --version 2>&1) != *"aws-cli/2"* ]]; then
+                    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+                    unzip -qo /tmp/awscliv2.zip -d /tmp
+                    /tmp/aws/install --update
+                    rm -rf /tmp/aws /tmp/awscliv2.zip
+                  fi
+
+                  # Install kubectl (from CloudFront)
+                  curl -fsSL https://dqz9mdd9dvd79.cloudfront.net/tools/kubectl -o /usr/local/bin/kubectl
+                  chmod +x /usr/local/bin/kubectl
+
+                  # Install helm (from CloudFront)
+                  curl -fsSL https://dqz9mdd9dvd79.cloudfront.net/tools/helm.tar.gz -o /tmp/helm.tar.gz
+                  tar xzf /tmp/helm.tar.gz -C /tmp
+                  mv /tmp/linux-amd64/helm /usr/local/bin/helm
+                  chmod +x /usr/local/bin/helm
+                  rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+
+                  # Install eksctl (from CloudFront)
+                  curl -fsSL https://dqz9mdd9dvd79.cloudfront.net/tools/eksctl.tar.gz -o /tmp/eksctl.tar.gz
+                  tar xzf /tmp/eksctl.tar.gz -C /usr/local/bin
+                  chmod +x /usr/local/bin/eksctl
+                  rm -f /tmp/eksctl.tar.gz
+
+                  # Custom prompt
+                  tee /etc/profile.d/openclaw_env.sh <<'EOF'
+                  export PROMPT_COMMAND='export PS1="\u@openclaw-ide:\w$ "'
+                  export AWS_REGION=${AWS::Region}
+                  export EKS_CLUSTER_NAME=${ClusterName}
+                  EOF
+
+                  # Setup for ec2-user
+                  cat <<"EOT" | sudo -E -H -u ec2-user bash
+                  set -e
+
+                  mkdir -p ~/environment
+
+                  # Install code-server
+                  codeServer=$(rpm -qa code-server | wc -l)
+                  if [ "$codeServer" -eq "0" ]; then
+                    curl -fsSL https://dqz9mdd9dvd79.cloudfront.net/tools/code-server.rpm -o /tmp/coder.rpm
+                    sudo rpm -U "/tmp/coder.rpm"
+                    sudo systemctl enable --now code-server@ec2-user
+                  fi
+
+                  # Configure code-server with password from Secrets Manager
+                  PASSWORD_SECRET_VALUE=$(aws secretsmanager get-secret-value \
+                    --secret-id "${IdePassword}" \
+                    --query 'SecretString' --output text \
+                    --region ${AWS::Region})
+                  IDE_PASSWORD=$(echo "$PASSWORD_SECRET_VALUE" | jq -r '.password')
+                  HASHED_PASSWORD=$(echo -n "$IDE_PASSWORD" | argon2 saltItWithSalt -l 32 -e)
+
+                  mkdir -p ~/.config/code-server
+                  tee ~/.config/code-server/config.yaml <<EOF
+                  cert: false
+                  auth: password
+                  hashed-password: "$HASHED_PASSWORD"
+                  bind-addr: 0.0.0.0:8889
+                  EOF
+
+                  # Configure kubeconfig
+                  aws eks update-kubeconfig \
+                    --name ${ClusterName} \
+                    --region ${AWS::Region}
+
+                  # Verify tools
+                  echo "=== Tool versions ==="
+                  kubectl version --client --short 2>/dev/null || kubectl version --client
+                  helm version --short
+                  eksctl version
+                  aws --version
+                  echo "=== Cluster access ==="
+                  kubectl get nodes || echo "Cluster not yet accessible (may need aws-auth update)"
+
+                  EOT
+
+                  # Restart code-server
+                  systemctl restart code-server@ec2-user
+
+  # ===========================================================================
+  # 12. IDE - Lambda (trigger SSM bootstrap)
+  # ===========================================================================
+
+  BootstrapLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: !Sub '${ClusterName}-ide-bootstrap-lambda'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                  - ssm:GetCommandInvocation
+                  - ssm:DescribeInstanceInformation
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: "*"
+
+  BootstrapLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ClusterName}-ide-bootstrap'
+      Handler: index.lambda_handler
+      Role: !GetAtt BootstrapLambdaRole.Arn
+      Runtime: python3.12
+      MemorySize: 256
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import traceback
+          import time
+
+          def lambda_handler(event, context):
+              responseData = {}
+              status = cfnresponse.SUCCESS
+
+              if event['RequestType'] == 'Delete':
+                  cfnresponse.send(event, context, status, {'Success': 'Deleted'}, 'CustomResourcePhysicalID')
+                  return
+
+              try:
+                  ssm = boto3.client('ssm')
+                  instance_id = event['ResourceProperties']['InstanceId']
+                  ssm_document = event['ResourceProperties']['SsmDocument']
+
+                  # Wait for SSM agent to be ready (up to 5 minutes)
+                  for attempt in range(30):
+                      try:
+                          resp = ssm.describe_instance_information(
+                              Filters=[{'Key': 'InstanceIds', 'Values': [instance_id]}]
+                          )
+                          if resp['InstanceInformationList']:
+                              print(f'SSM agent ready after {attempt * 10}s')
+                              break
+                      except Exception:
+                          pass
+                      time.sleep(10)
+                  else:
+                      raise Exception(f'SSM agent not ready after 300s for {instance_id}')
+
+                  response = ssm.send_command(
+                      InstanceIds=[instance_id],
+                      DocumentName=ssm_document,
+                      TimeoutSeconds=1800
+                  )
+                  command_id = response['Command']['CommandId']
+
+                  # Wait up to 13 minutes (leave buffer for Lambda 15min limit)
+                  waiter = ssm.get_waiter('command_executed')
+                  waiter.wait(
+                      CommandId=command_id,
+                      InstanceId=instance_id,
+                      WaiterConfig={'Delay': 15, 'MaxAttempts': 52}
+                  )
+
+                  responseData = {'Success': f'Bootstrapped instance: {instance_id}'}
+              except Exception as e:
+                  status = cfnresponse.FAILED
+                  responseData = {'Error': traceback.format_exc()}
+              finally:
+                  cfnresponse.send(event, context, status, responseData, 'CustomResourcePhysicalID')
+
+  BootstrapCustomResource:
+    Type: Custom::BootstrapIDE
+    DependsOn:
+      - BootstrapLambdaRole
+    Properties:
+      ServiceToken: !GetAtt BootstrapLambdaFunction.Arn
+      InstanceId: !Ref IdeInstance
+      SsmDocument: !Ref IdeSSMDocument
+
+  # ===========================================================================
+  # 13. IDE - EC2 Instance
+  # ===========================================================================
+
+  IdeInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: EKSCluster
+    Properties:
+      ImageId: !Ref IdeAmiParameterStoreName
+      InstanceType: !Ref IdeInstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref IdeVolumeSize
+            VolumeType: gp3
+            DeleteOnTermination: true
+            Encrypted: true
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref IdeSecurityGroup
+      IamInstanceProfile: !Ref IdeInstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-ide'
+        - Key: Project
+          Value: openclaw
+
+  # ===========================================================================
+  # 14. IDE - ALB (replaces CloudFront for China region)
+  # ===========================================================================
+
+  IdeALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${ClusterName}-ide-tg'
+      Port: 8889
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
+      Targets:
+        - Id: !Ref IdeInstance
+          Port: 8889
+      HealthCheckEnabled: true
+      HealthCheckPath: /healthz
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: '8889'
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckIntervalSeconds: 30
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-ide-tg'
+
+  IdeALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ClusterName}-ide-alb'
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref IdeALBSecurityGroup
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-ide-alb'
+
+  IdeALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref IdeALB
+      Port: 8889
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref IdeALBTargetGroup
+
 # =============================================================================
 # Outputs
 # =============================================================================
 Outputs:
+  TrialUseOnlyRoleArn:
+    Description: ARN of the TrialUseOnlyRole
+    Value: !GetAtt TrialUseOnlyRole.Arn
+  ########################################
+  # 实验 CFn 输出请在这里添加
+  ########################################
+
+  # --- EKS Outputs ---
   ClusterName:
     Description: EKS cluster name
     Value: !Ref ClusterName
@@ -1238,13 +1961,27 @@ Outputs:
     Description: SQS queue name for Karpenter interruption handling
     Value: !GetAtt KarpenterInterruptionQueue.QueueName
 
+  # --- IDE Outputs ---
+  IdeUrl:
+    Description: IDE URL (code-server via ALB)
+    Value: !Sub 'http://${IdeALB.DNSName}:8889'
+
+  IdePasswordConsoleUrl:
+    Description: AWS Console link to IDE password secret
+    Value: !Sub 'https://${AWS::Region}.console.amazonaws.cn/secretsmanager/secret?name=${ClusterName}-ide-password&region=${AWS::Region}'
+
+  IdeRoleArn:
+    Description: IDE instance IAM role ARN (add to EKS aws-auth for kubectl access)
+    Value: !GetAtt IdeRole.Arn
+
   PostDeployInstructions:
-    Description: Post-deploy steps (install Helm charts using Outputs above)
+    Description: Post-deploy steps
     Value: !Sub |
-      After stack creation, run:
       1. aws eks update-kubeconfig --name ${ClusterName} --region ${AWS::Region}
-      2. Install EFS CSI Driver (Helm) + create Pod Identity association
-      3. Install ALB Controller (Helm) with serviceAccount annotation
-      4. Install Karpenter (Helm) with serviceAccount annotation
-      5. Create efs-sc and gp3 StorageClasses (kubectl)
-      6. Apply Karpenter NodePool + EC2NodeClass CRDs (kubectl)
+      2. Grant IDE access to cluster:
+         eksctl create iamidentitymapping --cluster ${ClusterName} --region ${AWS::Region} \
+           --arn <IdeRoleArn> --username admin --group system:masters
+      3. Install Helm charts (use China mirror for Karpenter, public.ecr.aws is not accessible):
+         - EFS CSI Driver, ALB Controller, Karpenter
+      4. Create StorageClasses (efs-sc, gp3)
+      5. Apply Karpenter NodePool + EC2NodeClass

@@ -114,6 +114,11 @@ BEDROCK_ROLE_NAME="OpenClawBedrockRole"
 
 if aws iam get-role --role-name "$BEDROCK_ROLE_NAME" &>/dev/null; then
   echo -e "${YELLOW}⚠️  Bedrock role already exists${NC}"
+  # Ensure policy is attached (may have been detached by cleanup)
+  aws iam attach-role-policy \
+    --role-name "$BEDROCK_ROLE_NAME" \
+    --policy-arn "$BEDROCK_POLICY_ARN" 2>/dev/null || true
+  echo "  Ensured policy is attached to role"
 else
   echo "Creating Bedrock IAM role..."
   cat > /tmp/bedrock-trust-policy.json <<EOFTRUST
@@ -286,6 +291,11 @@ PROVISIONING_ROLE_NAME="openclaw-provisioning-service"
 
 if aws iam get-role --role-name "$PROVISIONING_ROLE_NAME" &>/dev/null; then
   echo -e "${YELLOW}⚠️  Provisioning service role already exists${NC}"
+  # Ensure policy is attached (may have been detached by cleanup)
+  aws iam attach-role-policy \
+    --role-name "$PROVISIONING_ROLE_NAME" \
+    --policy-arn "$PROVISIONING_POLICY_ARN" 2>/dev/null || true
+  echo "  Ensured policy is attached to role"
 else
   echo "Creating Provisioning Service IAM role..."
   cat > /tmp/provisioning-trust-policy.json <<EOFTRUST

@@ -356,6 +356,8 @@ Resources:
           - !Ref ClusterSecurityGroup
         EndpointPublicAccess: true
         EndpointPrivateAccess: true
+      AccessConfig:
+        AuthenticationMode: API_AND_CONFIG_MAP
       Logging:
         ClusterLogging:
           EnabledTypes:
@@ -462,6 +464,26 @@ Resources:
         arch: arm64
       Tags:
         Name: !Sub '${ClusterName}-standard-node'
+
+  # ===========================================================================
+  # 3.5 EKS Access Entries (for API_AND_CONFIG_MAP mode)
+  # ===========================================================================
+
+  NodeGroupAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt NodeGroupRole.Arn
+      Type: EC2_LINUX
+
+  KarpenterNodeAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt KarpenterNodeRole.Arn
+      Type: EC2_LINUX
 
   # ===========================================================================
   # 4. EKS Add-ons

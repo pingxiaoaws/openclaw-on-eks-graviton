@@ -553,6 +553,8 @@ Resources:
           - !Ref ClusterSecurityGroup
         EndpointPublicAccess: true
         EndpointPrivateAccess: true
+      AccessConfig:
+        AuthenticationMode: API_AND_CONFIG_MAP
       Logging:
         ClusterLogging:
           EnabledTypes:
@@ -658,6 +660,38 @@ Resources:
         node-class: system
       Tags:
         Name: !Sub '${ClusterName}-standard-node'
+
+  # ===========================================================================
+  # 3.5 EKS Access Entries (for API_AND_CONFIG_MAP mode)
+  # ===========================================================================
+
+  NodeGroupAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt NodeGroupRole.Arn
+      Type: EC2_LINUX
+
+  KarpenterNodeAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt KarpenterNodeRole.Arn
+      Type: EC2_LINUX
+
+  IdeAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    DependsOn: EKSCluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt IdeRole.Arn
+      Type: STANDARD
+      AccessPolicies:
+        - PolicyArn: !Sub 'arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy'
+          AccessScope:
+            Type: cluster
 
   # ===========================================================================
   # 4. EKS Add-ons
@@ -1660,19 +1694,19 @@ Resources:
                     rm -rf /tmp/aws /tmp/awscliv2.zip
                   fi
 
-                  # Install kubectl (from China S3 bucket)
-                  aws s3 cp s3://openclaw-cfn-cn-north-1/tools/kubectl /usr/local/bin/kubectl --region cn-north-1
+                  # Install kubectl (from CloudFront)
+                  curl -fsSL https://dqz9mdd9dvd79.cloudfront.net/tools/kubectl -o /usr/local/bin/kubectl
                   chmod +x /usr/local/bin/kubectl
 
-                  # Install helm (from China S3 bucket)
-                  aws s3 cp s3://openclaw-cfn-cn-north-1/tools/helm.tar.gz /tmp/helm.tar.gz --region cn-north-1
+                  # Install helm (from CloudFront)
+                  curl -fsSL https://dqz9mdd9dvd79.cloudfront.net/tools/helm.tar.gz -o /tmp/helm.tar.gz
                   tar xzf /tmp/helm.tar.gz -C /tmp
                   mv /tmp/linux-amd64/helm /usr/local/bin/helm
                   chmod +x /usr/local/bin/helm
                   rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
 
-                  # Install eksctl (from China S3 bucket)
-                  aws s3 cp s3://openclaw-cfn-cn-north-1/tools/eksctl.tar.gz /tmp/eksctl.tar.gz --region cn-north-1
+                  # Install eksctl (from CloudFront)
+                  curl -fsSL https://dqz9mdd9dvd79.cloudfront.net/tools/eksctl.tar.gz -o /tmp/eksctl.tar.gz
                   tar xzf /tmp/eksctl.tar.gz -C /usr/local/bin
                   chmod +x /usr/local/bin/eksctl
                   rm -f /tmp/eksctl.tar.gz
@@ -1693,7 +1727,7 @@ Resources:
                   # Install code-server
                   codeServer=$(rpm -qa code-server | wc -l)
                   if [ "$codeServer" -eq "0" ]; then
-                    aws s3 cp s3://openclaw-cfn-cn-north-1/tools/code-server.rpm /tmp/coder.rpm --region cn-north-1
+                    curl -fsSL https://dqz9mdd9dvd79.cloudfront.net/tools/code-server.rpm -o /tmp/coder.rpm
                     sudo rpm -U "/tmp/coder.rpm"
                     sudo systemctl enable --now code-server@ec2-user
                   fi
