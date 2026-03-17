@@ -609,29 +609,16 @@ CLUSTER_SG=$(aws eks describe-cluster \
   --output text)
 echo "Cluster security group: $CLUSTER_SG"
 
-# Get or create ALB managed security group
-ALB_MANAGED_SG=$(aws ec2 describe-security-groups \
-  --filters "Name=tag:elbv2.k8s.aws/cluster,Values=$CLUSTER_NAME" \
-  --region "$AWS_REGION" \
-  --query 'SecurityGroups[?contains(GroupName, `traffic`)].GroupId' \
-  --output text | head -1)
-
-if [ -z "$ALB_MANAGED_SG" ] || [ "$ALB_MANAGED_SG" = "None" ]; then
-  echo "No existing ALB managed SG found, will be auto-created by ALB controller"
-  ALB_SG_ANNOTATION=""
-else
-  echo "ALB managed security group: $ALB_MANAGED_SG"
-  ALB_SG_ANNOTATION="    alb.ingress.kubernetes.io/security-groups: ${CLOUDFRONT_SG_ID},${ALB_MANAGED_SG}"
-
-  # Allow ALB to reach pods on port 8080 (provisioning service) and 18790 (OpenClaw gateway nginx)
-  for PORT in 8080 18790; do
-    aws ec2 authorize-security-group-ingress \
-      --group-id "$CLUSTER_SG" \
-      --ip-permissions "IpProtocol=tcp,FromPort=$PORT,ToPort=$PORT,UserIdGroupPairs=[{GroupId=$ALB_MANAGED_SG}]" \
-      --region "$AWS_REGION" 2>/dev/null && echo "Added SG rule: ALB ($ALB_MANAGED_SG) -> Cluster ($CLUSTER_SG) port $PORT" \
-      || echo "SG rule already exists for port $PORT"
-  done
-fi
+# Allow CloudFront SG to reach pods on port 8080 (provisioning) and 18789-18790 (OpenClaw gateway)
+for PORT_RANGE in "8080 8080" "18789 18790"; do
+  FROM_PORT=$(echo $PORT_RANGE | cut -d' ' -f1)
+  TO_PORT=$(echo $PORT_RANGE | cut -d' ' -f2)
+  aws ec2 authorize-security-group-ingress \
+    --group-id "$CLUSTER_SG" \
+    --ip-permissions "IpProtocol=tcp,FromPort=$FROM_PORT,ToPort=$TO_PORT,UserIdGroupPairs=[{GroupId=$CLOUDFRONT_SG_ID,Description=ALB-CloudFront-to-pods}]" \
+    --region "$AWS_REGION" 2>/dev/null && echo "Added SG rule: CloudFront SG ($CLOUDFRONT_SG_ID) -> Cluster ($CLUSTER_SG) port $FROM_PORT-$TO_PORT" \
+    || echo "SG rule already exists for port $FROM_PORT-$TO_PORT"
+done
 
 # Delete old standalone Ingress if it exists (we now use shared ALB group)
 kubectl delete ingress openclaw-provisioning-ingress -n openclaw-provisioning --ignore-not-found=true
@@ -648,6 +635,7 @@ metadata:
     alb.ingress.kubernetes.io/group.name: ${SHARED_ALB_GROUP}
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/subnets: ${PUBLIC_SUBNETS}
+    alb.ingress.kubernetes.io/security-groups: ${CLOUDFRONT_SG_ID}
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /health
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
@@ -962,7 +950,8 @@ kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
   CLOUDFRONT_DISTRIBUTION_ID="$CLOUDFRONT_DIST_ID" \
   PUBLIC_ALB_DNS="$ALB_DNS" \
   PUBLIC_ALB_SUBNETS="$PUBLIC_SUBNETS" \
-  PUBLIC_ALB_GROUP_NAME="$SHARED_ALB_GROUP"
+  PUBLIC_ALB_GROUP_NAME="$SHARED_ALB_GROUP" \
+  PUBLIC_ALB_SECURITY_GROUPS="$CLOUDFRONT_SG_ID"
 
 echo "Waiting for rollout..."
 kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning --timeout=300s

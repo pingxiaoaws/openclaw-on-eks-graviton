@@ -147,6 +147,7 @@ class Config:
         "alb.ingress.kubernetes.io/target-type": "ip",
         "alb.ingress.kubernetes.io/group.name": os.environ.get('PUBLIC_ALB_GROUP_NAME', 'openclaw-shared-instances'),
         "alb.ingress.kubernetes.io/subnets": os.environ.get('PUBLIC_ALB_SUBNETS', ''),
+        "alb.ingress.kubernetes.io/security-groups": os.environ.get('PUBLIC_ALB_SECURITY_GROUPS', ''),
         "alb.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
         "alb.ingress.kubernetes.io/success-codes": "200,404",
         "alb.ingress.kubernetes.io/target-group-attributes": (
