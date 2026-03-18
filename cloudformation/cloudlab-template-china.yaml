@@ -636,7 +636,9 @@ Resources:
 
   SystemNodeGroup:
     Type: AWS::EKS::Nodegroup
-    DependsOn: EKSCluster
+    DependsOn:
+      - EKSCluster
+      - NodeGroupAccessEntry
     Properties:
       ClusterName: !Ref ClusterName
       NodegroupName: standard-nodes
@@ -737,17 +739,6 @@ Resources:
       ManagedPolicyArns:
         - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy'
 
-  EbsCsiAddon:
-    Type: AWS::EKS::Addon
-    DependsOn: SystemNodeGroup
-    Properties:
-      ClusterName: !Ref ClusterName
-      AddonName: aws-ebs-csi-driver
-      ResolveConflicts: OVERWRITE
-      PodIdentityAssociations:
-        - RoleArn: !GetAtt EbsCsiDriverRole.Arn
-          ServiceAccount: ebs-csi-controller-sa
-
   PodIdentityAddon:
     Type: AWS::EKS::Addon
     DependsOn: SystemNodeGroup
@@ -755,6 +746,19 @@ Resources:
       ClusterName: !Ref ClusterName
       AddonName: eks-pod-identity-agent
       ResolveConflicts: OVERWRITE
+
+  EbsCsiAddon:
+    Type: AWS::EKS::Addon
+    DependsOn:
+      - SystemNodeGroup
+      - PodIdentityAddon
+    Properties:
+      ClusterName: !Ref ClusterName
+      AddonName: aws-ebs-csi-driver
+      ResolveConflicts: OVERWRITE
+      PodIdentityAssociations:
+        - RoleArn: !GetAtt EbsCsiDriverRole.Arn
+          ServiceAccount: ebs-csi-controller-sa
 
   # ===========================================================================
   # 5. EFS Infrastructure
