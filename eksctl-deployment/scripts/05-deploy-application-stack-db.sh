@@ -39,33 +39,33 @@ echo "Region: $AWS_REGION"
 echo "Account: $AWS_ACCOUNT"
 echo ""
 
-# # ============================================================================
-# # Step 1: Install OpenClaw Operator
-# # ============================================================================
+# ============================================================================
+# Step 1: Install OpenClaw Operator
+# ============================================================================
 
-# echo -e "${BLUE}[1/9] Installing OpenClaw Operator...${NC}"
+echo -e "${BLUE}[1/9] Installing OpenClaw Operator...${NC}"
 
-# OPERATOR_DIR="$(dirname "$0")/../../openclaw-operator"
-# if [ ! -d "$OPERATOR_DIR" ]; then
-#   echo -e "${YELLOW}⚠️  Operator directory not found: $OPERATOR_DIR${NC}"
-#   echo "Skipping operator installation (deploy manually later)"
-# else
-#   cd "$OPERATOR_DIR"
+OPERATOR_DIR="$(dirname "$0")/../../openclaw-operator"
+if [ ! -d "$OPERATOR_DIR" ]; then
+  echo -e "${YELLOW}⚠️  Operator directory not found: $OPERATOR_DIR${NC}"
+  echo "Skipping operator installation (deploy manually later)"
+else
+  cd "$OPERATOR_DIR"
 
-#   if [ -d "charts/openclaw-operator" ]; then
-#     helm upgrade --install openclaw-operator charts/openclaw-operator \
-#       --namespace openclaw-operator-system \
-#       --create-namespace \
-#       --wait
-#     echo -e "${GREEN}✅ OpenClaw Operator installed${NC}"
-#   else
-#     echo "Using kustomize deployment..."
-#     kubectl apply -k config/default
-#     echo -e "${GREEN}✅ OpenClaw Operator installed (kustomize)${NC}"
-#   fi
+  if [ -d "charts/openclaw-operator" ]; then
+    helm upgrade --install openclaw-operator charts/openclaw-operator \
+      --namespace openclaw-operator-system \
+      --create-namespace \
+      --wait
+    echo -e "${GREEN}✅ OpenClaw Operator installed${NC}"
+  else
+    echo "Using kustomize deployment..."
+    kubectl apply -k config/default
+    echo -e "${GREEN}✅ OpenClaw Operator installed (kustomize)${NC}"
+  fi
 
-#   cd - > /dev/null
-# fi
+  cd - > /dev/null
+fi
 
 # echo ""
 
