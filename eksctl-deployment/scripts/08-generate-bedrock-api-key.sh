@@ -31,7 +31,7 @@ else
   AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 fi
 
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+AWS_ACCOUNT=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
 
 echo "Region:   $AWS_REGION"
 echo "Account:  $AWS_ACCOUNT"

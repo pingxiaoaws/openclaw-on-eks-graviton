@@ -66,7 +66,7 @@ else
   AWS_REGION=${AWS_REGION:-"us-east-1"}
 fi
 
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+AWS_ACCOUNT=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
 
 echo ""
 echo -e "${BLUE}Configuration Summary:${NC}"

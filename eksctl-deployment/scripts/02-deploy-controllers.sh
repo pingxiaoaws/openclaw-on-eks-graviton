@@ -30,11 +30,39 @@ else
   CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | rev | cut -d'/' -f1 | rev)
   AWS_REGION=$(echo "$CLUSTER_CONTEXT" | grep -oE 'us(-gov)?-(east|west|central)-(1|2)' | head -1)
 fi
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+AWS_ACCOUNT=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
 
 echo "Cluster: $CLUSTER_NAME"
 echo "Region: $AWS_REGION"
 echo "Account: $AWS_ACCOUNT"
+echo ""
+
+# CFN stack name (set via env var or default)
+CFN_STACK_NAME="${CFN_STACK_NAME:-cloudlab-template-global}"
+
+# Get CloudFormation stack output value (returns empty string if stack/key not found)
+get_cfn_output() {
+    local stack_name="$1"
+    local output_key="$2"
+    aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue" \
+        --output text 2>/dev/null || echo ""
+}
+
+# Query CFN outputs for EFS and ALB (empty if no stack)
+CFN_EFS_CSI_ROLE_ARN=$(get_cfn_output "$CFN_STACK_NAME" "EFSCSIDriverRoleArn")
+CFN_ALB_ROLE_ARN=$(get_cfn_output "$CFN_STACK_NAME" "ALBControllerRoleArn")
+CFN_EFS_ID=$(get_cfn_output "$CFN_STACK_NAME" "EFSFileSystemId")
+
+if [ -n "$CFN_EFS_CSI_ROLE_ARN" ] && [ "$CFN_EFS_CSI_ROLE_ARN" != "None" ]; then
+  echo -e "${GREEN}Found CFN stack '$CFN_STACK_NAME' — using pre-provisioned IAM resources${NC}"
+else
+  echo "No CFN stack outputs found — will create IAM resources from scratch"
+  CFN_EFS_CSI_ROLE_ARN=""
+  CFN_ALB_ROLE_ARN=""
+  CFN_EFS_ID=""
+fi
 echo ""
 
 # ============================================================================
@@ -43,16 +71,20 @@ echo ""
 
 echo -e "${BLUE}[1/8] Creating EFS CSI Driver IAM Role (Pod Identity)...${NC}"
 
-EFS_POLICY_NAME="AmazonEKS_EFS_CSI_Driver_Policy"
-EFS_ROLE_NAME="AmazonEKS_EFS_CSI_DriverRole"
-EFS_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
-
-# Create IAM Policy for EFS CSI Driver
-if aws iam get-policy --policy-arn "$EFS_POLICY_ARN" &>/dev/null; then
-  echo -e "${YELLOW}⚠️  EFS CSI Policy already exists${NC}"
+if [ -n "$CFN_EFS_CSI_ROLE_ARN" ]; then
+  echo -e "${GREEN}Using CFN-provisioned EFS CSI role: $CFN_EFS_CSI_ROLE_ARN${NC}"
+  EFS_ROLE_ARN="$CFN_EFS_CSI_ROLE_ARN"
 else
-  echo "Creating EFS CSI IAM policy..."
-  cat > /tmp/efs-csi-policy.json <<EOFPOLICY
+  EFS_POLICY_NAME="AmazonEKS_EFS_CSI_Driver_Policy"
+  EFS_ROLE_NAME="AmazonEKS_EFS_CSI_DriverRole"
+  EFS_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
+
+  # Create IAM Policy for EFS CSI Driver
+  if aws iam get-policy --policy-arn "$EFS_POLICY_ARN" &>/dev/null; then
+    echo -e "${YELLOW}⚠️  EFS CSI Policy already exists${NC}"
+  else
+    echo "Creating EFS CSI IAM policy..."
+    cat > /tmp/efs-csi-policy.json <<EOFPOLICY
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -93,20 +125,20 @@ else
 }
 EOFPOLICY
 
-  aws iam create-policy \
-    --policy-name "$EFS_POLICY_NAME" \
-    --policy-document file:///tmp/efs-csi-policy.json \
-    --description "Policy for EFS CSI Driver"
+    aws iam create-policy \
+      --policy-name "$EFS_POLICY_NAME" \
+      --policy-document file:///tmp/efs-csi-policy.json \
+      --description "Policy for EFS CSI Driver"
 
-  echo -e "${GREEN}✅ EFS CSI IAM policy created${NC}"
-fi
+    echo -e "${GREEN}✅ EFS CSI IAM policy created${NC}"
+  fi
 
-# Create IAM Role for EFS CSI Driver (Pod Identity)
-if aws iam get-role --role-name "$EFS_ROLE_NAME" &>/dev/null; then
-  echo -e "${YELLOW}⚠️  EFS CSI Role already exists${NC}"
-else
-  echo "Creating EFS CSI IAM role with Pod Identity trust policy..."
-  cat > /tmp/efs-csi-trust-policy.json <<EOFTRUST
+  # Create IAM Role for EFS CSI Driver (Pod Identity)
+  if aws iam get-role --role-name "$EFS_ROLE_NAME" &>/dev/null; then
+    echo -e "${YELLOW}⚠️  EFS CSI Role already exists${NC}"
+  else
+    echo "Creating EFS CSI IAM role with Pod Identity trust policy..."
+    cat > /tmp/efs-csi-trust-policy.json <<EOFTRUST
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -124,16 +156,19 @@ else
 }
 EOFTRUST
 
-  aws iam create-role \
-    --role-name "$EFS_ROLE_NAME" \
-    --assume-role-policy-document file:///tmp/efs-csi-trust-policy.json \
-    --description "IAM role for EFS CSI Driver via Pod Identity"
+    aws iam create-role \
+      --role-name "$EFS_ROLE_NAME" \
+      --assume-role-policy-document file:///tmp/efs-csi-trust-policy.json \
+      --description "IAM role for EFS CSI Driver via Pod Identity"
 
-  aws iam attach-role-policy \
-    --role-name "$EFS_ROLE_NAME" \
-    --policy-arn "$EFS_POLICY_ARN"
+    aws iam attach-role-policy \
+      --role-name "$EFS_ROLE_NAME" \
+      --policy-arn "$EFS_POLICY_ARN"
 
-  echo -e "${GREEN}✅ EFS CSI IAM role created${NC}"
+    echo -e "${GREEN}✅ EFS CSI IAM role created${NC}"
+  fi
+
+  EFS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
 fi
 
 echo ""
@@ -168,9 +203,7 @@ else
   echo -e "${GREEN}✅ EFS CSI Driver installed${NC}"
 fi
 
-# Create Pod Identity Association
-EFS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
-
+# Create Pod Identity Association (EFS_ROLE_ARN set above from CFN or local creation)
 EXISTING_EFS_ASSOC=$(aws eks list-pod-identity-associations \
   --cluster-name "$CLUSTER_NAME" \
   --region "$AWS_REGION" \
@@ -201,11 +234,17 @@ echo ""
 
 echo -e "${BLUE}[3/8] Setting up EFS FileSystem...${NC}"
 
-# Check if EFS already exists
-EFS_ID=$(aws efs describe-file-systems \
-  --region "$AWS_REGION" \
-  --query "FileSystems[?Tags[?Key=='Name' && Value=='openclaw-shared-storage']].FileSystemId" \
-  --output text 2>/dev/null || echo "")
+# Use CFN-provisioned EFS if available, otherwise check by tag
+if [ -n "$CFN_EFS_ID" ] && [ "$CFN_EFS_ID" != "None" ]; then
+  EFS_ID="$CFN_EFS_ID"
+  echo -e "${GREEN}Using CFN-provisioned EFS FileSystem: $EFS_ID${NC}"
+else
+  # Check if EFS already exists
+  EFS_ID=$(aws efs describe-file-systems \
+    --region "$AWS_REGION" \
+    --query "FileSystems[?Tags[?Key=='Name' && Value=='openclaw-shared-storage']].FileSystemId" \
+    --output text 2>/dev/null || echo "")
+fi
 
 if [ -n "$EFS_ID" ]; then
   echo -e "${YELLOW}⚠️  EFS FileSystem already exists: $EFS_ID${NC}"
@@ -336,36 +375,72 @@ echo -e "${BLUE}[4/8] Installing AWS Load Balancer Controller...${NC}"
 if helm list -n kube-system | grep -q aws-load-balancer-controller; then
   echo -e "${YELLOW}⚠️  ALB Controller already installed, skipping${NC}"
 else
-  # Download IAM policy
-  curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json
-
-  # Create IAM policy
-  aws iam create-policy \
-    --policy-name AWSLoadBalancerControllerIAMPolicy \
-    --policy-document file:///tmp/iam_policy.json \
-    --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
-
-  # Create IAM service account
-  eksctl create iamserviceaccount \
-    --cluster="$CLUSTER_NAME" \
-    --namespace=kube-system \
-    --name=aws-load-balancer-controller \
-    --attach-policy-arn="arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy" \
-    --approve \
-    --region="$AWS_REGION" \
-    --override-existing-serviceaccounts 2>/dev/null || echo "Service account already exists"
-
-  # Add Helm repo
+  # Add Helm repo (needed regardless of IAM path)
   helm repo add eks https://aws.github.io/eks-charts
   helm repo update
 
-  # Install ALB Controller
-  helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-    --namespace kube-system \
-    --set clusterName="$CLUSTER_NAME" \
-    --set serviceAccount.create=false \
-    --set serviceAccount.name=aws-load-balancer-controller \
-    --wait
+  if [ -n "$CFN_ALB_ROLE_ARN" ]; then
+    echo -e "${GREEN}Using CFN-provisioned ALB Controller role: $CFN_ALB_ROLE_ARN${NC}"
+    echo "Skipping IAM policy creation and IRSA setup (Pod Identity handles auth)"
+
+    # Install ALB Controller — Pod Identity provides credentials, no IRSA needed
+    helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+      --namespace kube-system \
+      --set clusterName="$CLUSTER_NAME" \
+      --set serviceAccount.create=true \
+      --set serviceAccount.name=aws-load-balancer-controller \
+      --wait
+
+    # Create Pod Identity Association for ALB Controller (CFN role needs this)
+    EXISTING_ALB_ASSOC=$(aws eks list-pod-identity-associations \
+      --cluster-name "$CLUSTER_NAME" \
+      --region "$AWS_REGION" \
+      --namespace kube-system \
+      --service-account aws-load-balancer-controller \
+      --query 'associations[0].associationId' \
+      --output text 2>/dev/null || echo "")
+
+    if [ -n "$EXISTING_ALB_ASSOC" ] && [ "$EXISTING_ALB_ASSOC" != "None" ]; then
+      echo -e "${YELLOW}⚠️  ALB Controller Pod Identity association already exists: $EXISTING_ALB_ASSOC${NC}"
+    else
+      echo "Creating Pod Identity association for ALB Controller..."
+      aws eks create-pod-identity-association \
+        --cluster-name "$CLUSTER_NAME" \
+        --namespace kube-system \
+        --service-account aws-load-balancer-controller \
+        --role-arn "$CFN_ALB_ROLE_ARN" \
+        --region "$AWS_REGION"
+
+      echo -e "${GREEN}✅ ALB Controller Pod Identity association created${NC}"
+    fi
+  else
+    # Download IAM policy
+    curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json
+
+    # Create IAM policy
+    aws iam create-policy \
+      --policy-name AWSLoadBalancerControllerIAMPolicy \
+      --policy-document file:///tmp/iam_policy.json \
+      --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
+
+    # Create IAM service account
+    eksctl create iamserviceaccount \
+      --cluster="$CLUSTER_NAME" \
+      --namespace=kube-system \
+      --name=aws-load-balancer-controller \
+      --attach-policy-arn="arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy" \
+      --approve \
+      --region="$AWS_REGION" \
+      --override-existing-serviceaccounts 2>/dev/null || echo "Service account already exists"
+
+    # Install ALB Controller
+    helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+      --namespace kube-system \
+      --set clusterName="$CLUSTER_NAME" \
+      --set serviceAccount.create=false \
+      --set serviceAccount.name=aws-load-balancer-controller \
+      --wait
+  fi
 
   echo -e "${GREEN}✅ AWS Load Balancer Controller installed${NC}"
 fi

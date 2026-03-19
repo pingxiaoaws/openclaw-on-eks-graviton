@@ -19,7 +19,7 @@ echo ""
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="${SCRIPT_DIR}/../configs"
-AWS_REGION=${AWS_REGION:-"us-east-1"}
+AWS_REGION=${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}
 
 # ============================================================================
 # Step 1: Select Configuration
@@ -86,7 +86,7 @@ if ! command -v aws &> /dev/null; then
   echo -e "${RED}❌ aws CLI not found${NC}"
   exit 1
 fi
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+AWS_ACCOUNT=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
 echo -e "${GREEN}✅ AWS CLI: Account $AWS_ACCOUNT${NC}"
 
 # Check config file

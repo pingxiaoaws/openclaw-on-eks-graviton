@@ -1,18 +1,16 @@
 # Multi-stage build for OpenClaw Provisioning Service
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Install uv for fast dependency resolution
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Install Python dependencies to /opt/venv
 COPY requirements.txt .
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv venv /opt/venv && \
+    UV_LINK_MODE=copy uv pip install --python /opt/venv/bin/python \
+    --no-cache -r requirements.txt
 
 # Final image
 FROM python:3.12-slim

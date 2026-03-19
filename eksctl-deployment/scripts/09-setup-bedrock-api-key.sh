@@ -83,7 +83,7 @@ else
   AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
   CLUSTER_NAME="unknown"
 fi
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+AWS_ACCOUNT=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
 
 echo "Cluster: $CLUSTER_NAME"
 echo "Region:  $AWS_REGION"
@@ -229,7 +229,7 @@ metadata:
     app.kubernetes.io/managed-by: bedrock-apikey-setup
 spec:
   image:
-    repository: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw
+    repository: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw
     tag: "2026.3.14"
     pullPolicy: IfNotPresent
   config:

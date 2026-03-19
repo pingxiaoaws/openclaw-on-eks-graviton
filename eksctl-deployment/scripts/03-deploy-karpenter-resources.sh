@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -39,7 +39,7 @@ export KARPENTER_NAMESPACE="kube-system"
 export KARPENTER_VERSION="1.9.0"
 export CLUSTER_NAME=$(kubectl config current-context | cut -d'/' -f2)
 export AWS_DEFAULT_REGION=$(kubectl config current-context | cut -d':' -f4)
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
 export AWS_PARTITION="aws"
 export TEMPOUT=$(mktemp)
 
@@ -49,36 +49,82 @@ print_info "AWS_ACCOUNT_ID: ${AWS_ACCOUNT_ID}"
 print_info "KARPENTER_VERSION: ${KARPENTER_VERSION}"
 echo ""
 
+# CFN stack name (set via env var or default)
+CFN_STACK_NAME="${CFN_STACK_NAME:-cloudlab-template-global}"
+
+# Get CloudFormation stack output value (returns empty string if stack/key not found)
+get_cfn_output() {
+    local stack_name="$1"
+    local output_key="$2"
+    aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue" \
+        --output text 2>/dev/null || echo ""
+}
+
+# Query CFN outputs for Karpenter resources
+CFN_KARPENTER_CONTROLLER_ROLE_ARN=$(get_cfn_output "$CFN_STACK_NAME" "KarpenterControllerRoleArn")
+CFN_KARPENTER_NODE_ROLE_ARN=$(get_cfn_output "$CFN_STACK_NAME" "KarpenterNodeRoleArn")
+CFN_KARPENTER_QUEUE_NAME=$(get_cfn_output "$CFN_STACK_NAME" "KarpenterInterruptionQueueName")
+
+# Determine if we can skip Karpenter IAM stack creation
+USE_CFN_KARPENTER=false
+if [ -n "$CFN_KARPENTER_CONTROLLER_ROLE_ARN" ] && [ "$CFN_KARPENTER_CONTROLLER_ROLE_ARN" != "None" ] \
+   && [ -n "$CFN_KARPENTER_NODE_ROLE_ARN" ] && [ "$CFN_KARPENTER_NODE_ROLE_ARN" != "None" ] \
+   && [ -n "$CFN_KARPENTER_QUEUE_NAME" ] && [ "$CFN_KARPENTER_QUEUE_NAME" != "None" ]; then
+  USE_CFN_KARPENTER=true
+  print_status "Found CFN stack '$CFN_STACK_NAME' - using pre-provisioned Karpenter IAM resources"
+  print_info "  Controller Role: $CFN_KARPENTER_CONTROLLER_ROLE_ARN"
+  print_info "  Node Role:       $CFN_KARPENTER_NODE_ROLE_ARN"
+  print_info "  SQS Queue:       $CFN_KARPENTER_QUEUE_NAME"
+else
+  print_info "No CFN Karpenter outputs found - will create IAM resources from scratch"
+fi
+echo ""
+
 # Step 1: Create IAM resources using CloudFormation
 echo -e "${BLUE}[3/7] Creating IAM resources via CloudFormation...${NC}"
-print_info "Downloading CloudFormation template..."
-curl -fsSL "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml" > "${TEMPOUT}"
 
-if aws cloudformation describe-stacks --stack-name "Karpenter-${CLUSTER_NAME}" --region ${AWS_DEFAULT_REGION} &>/dev/null; then
-    print_warning "CloudFormation stack already exists"
+if [ "$USE_CFN_KARPENTER" = true ]; then
+  print_status "Skipping Karpenter CFN stack creation (using pre-provisioned resources)"
+  KARPENTER_CONTROLLER_ROLE_ARN="$CFN_KARPENTER_CONTROLLER_ROLE_ARN"
+  KARPENTER_NODE_ROLE_ARN="$CFN_KARPENTER_NODE_ROLE_ARN"
+  KARPENTER_QUEUE_NAME="$CFN_KARPENTER_QUEUE_NAME"
 else
-    print_info "Deploying CloudFormation stack (this may take 2-3 minutes)..."
-    aws cloudformation deploy \
-      --stack-name "Karpenter-${CLUSTER_NAME}" \
-      --template-file "${TEMPOUT}" \
-      --capabilities CAPABILITY_NAMED_IAM \
-      --parameter-overrides "ClusterName=${CLUSTER_NAME}" \
-      --region ${AWS_DEFAULT_REGION}
-    print_status "CloudFormation stack created"
+  print_info "Downloading CloudFormation template..."
+  curl -fsSL "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml" > "${TEMPOUT}"
+
+  if aws cloudformation describe-stacks --stack-name "Karpenter-${CLUSTER_NAME}" --region ${AWS_DEFAULT_REGION} &>/dev/null; then
+      print_warning "CloudFormation stack already exists"
+  else
+      print_info "Deploying CloudFormation stack (this may take 2-3 minutes)..."
+      aws cloudformation deploy \
+        --stack-name "Karpenter-${CLUSTER_NAME}" \
+        --template-file "${TEMPOUT}" \
+        --capabilities CAPABILITY_NAMED_IAM \
+        --parameter-overrides "ClusterName=${CLUSTER_NAME}" \
+        --region ${AWS_DEFAULT_REGION}
+      print_status "CloudFormation stack created"
+  fi
+
+  KARPENTER_CONTROLLER_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/KarpenterControllerRole-${CLUSTER_NAME}"
+  KARPENTER_NODE_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/KarpenterNodeRole-${CLUSTER_NAME}"
+  KARPENTER_QUEUE_NAME="${CLUSTER_NAME}"
 fi
 
 # Create EC2 Spot service-linked role
 aws iam create-service-linked-role --aws-service-name spot.amazonaws.com 2>/dev/null || true
 print_status "EC2 Spot service-linked role verified"
 
-# Create KarpenterControllerRole (for IRSA)
-print_info "Creating KarpenterControllerRole for IRSA..."
-OIDC_PROVIDER=$(aws eks describe-cluster --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --query "cluster.identity.oidc.issuer" --output text | sed -e "s/^https:\/\///")
+if [ "$USE_CFN_KARPENTER" = false ]; then
+  # Create KarpenterControllerRole (for IRSA) - only when not using CFN
+  print_info "Creating KarpenterControllerRole for IRSA..."
+  OIDC_PROVIDER=$(aws eks describe-cluster --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --query "cluster.identity.oidc.issuer" --output text | sed -e "s/^https:\/\///")
 
-if aws iam get-role --role-name "KarpenterControllerRole-${CLUSTER_NAME}" &>/dev/null; then
-    print_warning "KarpenterControllerRole already exists"
-else
-    cat > /tmp/karpenter-controller-trust-policy.json <<EOF
+  if aws iam get-role --role-name "KarpenterControllerRole-${CLUSTER_NAME}" &>/dev/null; then
+      print_warning "KarpenterControllerRole already exists"
+  else
+      cat > /tmp/karpenter-controller-trust-policy.json <<EOF
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -99,18 +145,19 @@ else
 }
 EOF
 
-    aws iam create-role \
-      --role-name "KarpenterControllerRole-${CLUSTER_NAME}" \
-      --assume-role-policy-document file:///tmp/karpenter-controller-trust-policy.json
+      aws iam create-role \
+        --role-name "KarpenterControllerRole-${CLUSTER_NAME}" \
+        --assume-role-policy-document file:///tmp/karpenter-controller-trust-policy.json
 
-    print_status "KarpenterControllerRole created"
+      print_status "KarpenterControllerRole created"
+  fi
+
+  # Attach CloudFormation-created policy to controller role
+  print_info "Attaching KarpenterControllerPolicy to controller role..."
+  aws iam attach-role-policy \
+    --role-name "KarpenterControllerRole-${CLUSTER_NAME}" \
+    --policy-arn "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:policy/KarpenterControllerPolicy-${CLUSTER_NAME}" 2>/dev/null || true
 fi
-
-# Attach CloudFormation-created policy to controller role
-print_info "Attaching KarpenterControllerPolicy to controller role..."
-aws iam attach-role-policy \
-  --role-name "KarpenterControllerRole-${CLUSTER_NAME}" \
-  --policy-arn "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:policy/KarpenterControllerPolicy-${CLUSTER_NAME}" 2>/dev/null || true
 
 print_status "Controller role configured with required policies"
 echo ""
@@ -138,8 +185,6 @@ echo ""
 
 # Step 3: Add IAM identity mapping for Karpenter nodes
 echo -e "${BLUE}[5/7] Adding IAM identity mapping...${NC}"
-KARPENTER_NODE_ROLE="KarpenterNodeRole-${CLUSTER_NAME}"
-KARPENTER_NODE_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/${KARPENTER_NODE_ROLE}"
 
 if eksctl get iamidentitymapping --cluster ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --arn ${KARPENTER_NODE_ROLE_ARN} &>/dev/null; then
     print_warning "IAM identity mapping already exists"
@@ -171,15 +216,40 @@ helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
   --namespace "${KARPENTER_NAMESPACE}" \
   --create-namespace \
   --set "settings.clusterName=${CLUSTER_NAME}" \
-  --set "settings.interruptionQueue=${CLUSTER_NAME}" \
+  --set "settings.interruptionQueue=${KARPENTER_QUEUE_NAME}" \
   --set controller.resources.requests.cpu=1 \
   --set controller.resources.requests.memory=1Gi \
   --set controller.resources.limits.cpu=1 \
   --set controller.resources.limits.memory=1Gi \
-  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/KarpenterControllerRole-${CLUSTER_NAME}" \
+  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_CONTROLLER_ROLE_ARN}" \
   --wait
 
 print_status "Karpenter installed successfully"
+
+# Create Pod Identity Association for Karpenter (when using CFN-provisioned role)
+if [ "$USE_CFN_KARPENTER" = true ]; then
+  EXISTING_KARPENTER_ASSOC=$(aws eks list-pod-identity-associations \
+    --cluster-name "$CLUSTER_NAME" \
+    --region "$AWS_DEFAULT_REGION" \
+    --namespace "${KARPENTER_NAMESPACE}" \
+    --service-account karpenter \
+    --query 'associations[0].associationId' \
+    --output text 2>/dev/null || echo "")
+
+  if [ -n "$EXISTING_KARPENTER_ASSOC" ] && [ "$EXISTING_KARPENTER_ASSOC" != "None" ]; then
+    print_warning "Karpenter Pod Identity association already exists: $EXISTING_KARPENTER_ASSOC"
+  else
+    print_info "Creating Pod Identity association for Karpenter..."
+    aws eks create-pod-identity-association \
+      --cluster-name "$CLUSTER_NAME" \
+      --namespace "${KARPENTER_NAMESPACE}" \
+      --service-account karpenter \
+      --role-arn "$KARPENTER_CONTROLLER_ROLE_ARN" \
+      --region "$AWS_DEFAULT_REGION"
+
+    print_status "Karpenter Pod Identity association created"
+  fi
+fi
 
 # Wait for Karpenter to be ready
 print_info "Waiting for Karpenter pods to be ready..."
