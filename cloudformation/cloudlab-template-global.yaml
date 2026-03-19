@@ -30,10 +30,6 @@ Parameters:
     AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
     Description: VPC CIDR block
 
-  AvailabilityZones:
-    Type: List<AWS::EC2::AvailabilityZone::Name>
-    Description: Three availability zones (e.g. us-east-1a, us-east-1b, us-east-1c)
-
   SystemNodeInstanceTypes:
     Type: String
     Default: m6g.xlarge
@@ -75,8 +71,8 @@ Parameters:
   # --- IDE Parameters ---
   IdeInstanceType:
     Type: String
-    Default: t3.medium
-    Description: EC2 instance type for IDE
+    Default: t4g.medium
+    Description: EC2 instance type for IDE (Graviton ARM64)
 
   IdeVolumeSize:
     Type: Number
@@ -85,7 +81,7 @@ Parameters:
 
   IdeAmiParameterStoreName:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
-    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-arm64"
 
   CodeServerVersion:
     Type: String
@@ -97,36 +93,8 @@ Parameters:
 # =============================================================================
 Mappings:
   PrefixListID:
-    ap-northeast-1:
-      PrefixList: pl-58a04531
-    ap-northeast-2:
-      PrefixList: pl-22a6434b
-    ap-south-1:
-      PrefixList: pl-9aa247f3
-    ap-southeast-1:
-      PrefixList: pl-31a34658
-    ap-southeast-2:
-      PrefixList: pl-b8a742d1
-    ca-central-1:
-      PrefixList: pl-38a64351
-    eu-central-1:
-      PrefixList: pl-a3a144ca
-    eu-north-1:
-      PrefixList: pl-fab65393
-    eu-west-1:
-      PrefixList: pl-4fa04526
-    eu-west-2:
-      PrefixList: pl-93a247fa
-    eu-west-3:
-      PrefixList: pl-75b1541c
-    sa-east-1:
-      PrefixList: pl-5da64334
     us-east-1:
       PrefixList: pl-3b927c52
-    us-east-2:
-      PrefixList: pl-b6a144df
-    us-west-1:
-      PrefixList: pl-4ea04527
     us-west-2:
       PrefixList: pl-82a045eb
 
@@ -134,184 +102,6 @@ Mappings:
 # Resources
 # =============================================================================
 Resources:
-
-  # TrialUseOnlyRole created by Cloudlab for user lab access, please do not modify
-  TrialUseOnlyRole:
-    Type: AWS::IAM::Role
-    DeletionPolicy: Delete
-    Properties:
-      RoleName: TrialUseOnly-ContentGeneratedByGenAIDoesNotRepresentViewsOfAWS
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Sid: AllowCloudlabDelegateAssumeThisRole
-            Effect: Allow
-            Principal:
-              AWS:
-                - arn:aws:iam::585008076763:root
-            Action: sts:AssumeRole
-      Path: /
-      Policies:
-        - PolicyName: TrialUseOnlyRolePolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Sid: MinimalPermissionsForTrialUseOnlyRole
-                ########################################
-                # Lab permissions
-                ########################################
-                Action:
-                  # EKS
-                  - eks:*
-                  # EC2 & VPC
-                  - ec2:Describe*
-                  - ec2:Get*
-                  - ec2:List*
-                  - ec2:CreateTags
-                  - ec2:DeleteTags
-                  - ec2:RunInstances
-                  - ec2:TerminateInstances
-                  - ec2:CreateSecurityGroup
-                  - ec2:DeleteSecurityGroup
-                  - ec2:AuthorizeSecurityGroupIngress
-                  - ec2:RevokeSecurityGroupIngress
-                  - ec2:CreateLaunchTemplate
-                  - ec2:DeleteLaunchTemplate
-                  - ec2:CreateFleet
-                  # IAM
-                  - iam:CreateRole
-                  - iam:DeleteRole
-                  - iam:GetRole
-                  - iam:ListRoles
-                  - iam:TagRole
-                  - iam:PassRole
-                  - iam:AttachRolePolicy
-                  - iam:DetachRolePolicy
-                  - iam:PutRolePolicy
-                  - iam:DeleteRolePolicy
-                  - iam:ListAttachedRolePolicies
-                  - iam:ListRolePolicies
-                  - iam:ListInstanceProfilesForRole
-                  - iam:CreatePolicy
-                  - iam:DeletePolicy
-                  - iam:GetPolicy
-                  - iam:GetPolicyVersion
-                  - iam:ListPolicyVersions
-                  - iam:TagPolicy
-                  - iam:CreateOpenIDConnectProvider
-                  - iam:DeleteOpenIDConnectProvider
-                  - iam:GetOpenIDConnectProvider
-                  - iam:ListOpenIDConnectProviders
-                  - iam:TagOpenIDConnectProvider
-                  - iam:CreateInstanceProfile
-                  - iam:DeleteInstanceProfile
-                  - iam:GetInstanceProfile
-                  - iam:AddRoleToInstanceProfile
-                  - iam:RemoveRoleFromInstanceProfile
-                  - iam:TagInstanceProfile
-                  - iam:CreateServiceLinkedRole
-                  - iam:ListServerCertificates
-                  - iam:GetServerCertificate
-                  # EFS
-                  - elasticfilesystem:Describe*
-                  - elasticfilesystem:Create*
-                  - elasticfilesystem:Delete*
-                  - elasticfilesystem:TagResource
-                  - elasticfilesystem:UntagResource
-                  # ELB
-                  - elasticloadbalancing:*
-                  # ECR
-                  - ecr:GetAuthorizationToken
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:BatchGetImage
-                  - ecr:CreateRepository
-                  - ecr:DeleteRepository
-                  - ecr:DescribeRepositories
-                  - ecr:ListTagsForResource
-                  - ecr:TagResource
-                  - ecr:PutImage
-                  - ecr:InitiateLayerUpload
-                  - ecr:UploadLayerPart
-                  - ecr:CompleteLayerUpload
-                  - ecr-public:GetAuthorizationToken
-                  # SQS
-                  - sqs:*
-                  # CloudFormation
-                  - cloudformation:*
-                  # STS
-                  - sts:GetCallerIdentity
-                  - sts:AssumeRole
-                  - sts:GetServiceBearerToken
-                  # SSM
-                  - ssm:GetParameter
-                  - ssm:GetParameters
-                  - ssm:DescribeParameters
-                  - ssm:SendCommand
-                  - ssm:GetCommandInvocation
-                  - ssm:DescribeInstanceInformation
-                  # Bedrock
-                  - bedrock:InvokeModel
-                  - bedrock:InvokeModelWithResponseStream
-                  - bedrock:ListFoundationModels
-                  - bedrock:GetFoundationModel
-                  # Cognito
-                  - cognito-idp:*
-                  # CloudWatch Logs
-                  - logs:Describe*
-                  - logs:Get*
-                  - logs:List*
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                  - logs:PutRetentionPolicy
-                  # Secrets Manager
-                  - secretsmanager:CreateSecret
-                  - secretsmanager:DeleteSecret
-                  - secretsmanager:DescribeSecret
-                  - secretsmanager:GetSecretValue
-                  - secretsmanager:ListSecrets
-                  - secretsmanager:TagResource
-                  - secretsmanager:PutSecretValue
-                  # S3 (Helm charts)
-                  - s3:GetObject
-                  - s3:ListBucket
-                  # CloudFront
-                  - cloudfront:*
-                  # KMS
-                  - kms:Describe*
-                  - kms:List*
-                  - kms:Get*
-                  # Pricing
-                  - pricing:GetProducts
-                  # Lambda
-                  - lambda:CreateFunction
-                  - lambda:DeleteFunction
-                  - lambda:InvokeFunction
-                  - lambda:GetFunction
-                  - lambda:UpdateFunctionCode
-                  - lambda:UpdateFunctionConfiguration
-                  # EventBridge
-                  - events:PutRule
-                  - events:DeleteRule
-                  - events:PutTargets
-                  - events:RemoveTargets
-                  - events:DescribeRule
-                  - events:ListRules
-                  # AutoScaling
-                  - autoscaling:Describe*
-                  # ACM & WAF
-                  - acm:ListCertificates
-                  - acm:DescribeCertificate
-                  - waf-regional:*
-                  - wafv2:*
-                  - shield:*
-                Resource:
-                  - '*'
-                  ########################################
-                  # Lab resources
-                  ########################################
 
   # ===========================================================================
   # 1. Networking
@@ -351,7 +141,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Select [0, !Cidr [!Ref VpcCIDR, 6, 13]]
-      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      AvailabilityZone: !Select [0, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -366,7 +156,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Select [1, !Cidr [!Ref VpcCIDR, 6, 13]]
-      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      AvailabilityZone: !Select [1, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -381,7 +171,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Select [2, !Cidr [!Ref VpcCIDR, 6, 13]]
-      AvailabilityZone: !Select [2, !Ref AvailabilityZones]
+      AvailabilityZone: !Select [2, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -452,7 +242,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Select [3, !Cidr [!Ref VpcCIDR, 6, 13]]
-      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
         - Key: Name
           Value: !Sub '${ClusterName}-private-${AWS::Region}a'
@@ -468,7 +258,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Select [4, !Cidr [!Ref VpcCIDR, 6, 13]]
-      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      AvailabilityZone: !Select [1, !GetAZs '']
       Tags:
         - Key: Name
           Value: !Sub '${ClusterName}-private-${AWS::Region}b'
@@ -484,7 +274,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Select [5, !Cidr [!Ref VpcCIDR, 6, 13]]
-      AvailabilityZone: !Select [2, !Ref AvailabilityZones]
+      AvailabilityZone: !Select [2, !GetAZs '']
       Tags:
         - Key: Name
           Value: !Sub '${ClusterName}-private-${AWS::Region}c'
@@ -552,6 +342,12 @@ Resources:
     Properties:
       GroupDescription: !Sub 'EKS cluster security group for ${ClusterName}'
       VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - Description: Allow HTTPS from IDE instance
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref IdeSecurityGroup
       Tags:
         - Key: Name
           Value: !Sub '${ClusterName}-cluster-sg'
@@ -575,7 +371,7 @@ Resources:
         SecurityGroupIds:
           - !Ref ClusterSecurityGroup
         EndpointPublicAccess: true
-        EndpointPrivateAccess: true
+        EndpointPrivateAccess: false
       AccessConfig:
         AuthenticationMode: API_AND_CONFIG_MAP
       Logging:
@@ -590,7 +386,9 @@ Resources:
         - Key: Project
           Value: openclaw-multi-tenant
 
-  # --- OIDC Provider ---
+  # ===========================================================================
+  # 2b. OIDC Provider (required for IRSA - IAM Roles for Service Accounts)
+  # ===========================================================================
 
   OIDCProvider:
     Type: AWS::IAM::OIDCProvider
@@ -600,10 +398,10 @@ Resources:
       ClientIdList:
         - sts.amazonaws.com
       ThumbprintList:
-        - '9e99a48a9960b14926bb7f3b02e22da2b0ab7280'
+        - "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
       Tags:
         - Key: Name
-          Value: !Sub '${ClusterName}-oidc'
+          Value: !Sub '${ClusterName}-oidc-provider'
 
   # ===========================================================================
   # 3. Managed Node Group (System Nodes)
@@ -893,7 +691,7 @@ Resources:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: !Sub '${ClusterName}-ALBControllerPolicy'
-      Description: IAM policy for AWS Load Balancer Controller
+      Description: IAM policy for AWS Load Balancer Controller v3.1.0
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -919,11 +717,14 @@ Resources:
               - ec2:DescribeTags
               - ec2:DescribeCoipPools
               - ec2:GetCoipPoolUsage
-              - ec2:DescribeVpcEndpoints
+              - ec2:GetSecurityGroupsForVpc
+              - ec2:DescribeIpamPools
+              - ec2:DescribeRouteTables
               - elasticloadbalancing:DescribeLoadBalancers
               - elasticloadbalancing:DescribeLoadBalancerAttributes
               - elasticloadbalancing:DescribeListeners
               - elasticloadbalancing:DescribeListenerCertificates
+              - elasticloadbalancing:DescribeListenerAttributes
               - elasticloadbalancing:DescribeSSLPolicies
               - elasticloadbalancing:DescribeRules
               - elasticloadbalancing:DescribeTargetGroups
@@ -931,6 +732,7 @@ Resources:
               - elasticloadbalancing:DescribeTargetHealth
               - elasticloadbalancing:DescribeTags
               - elasticloadbalancing:DescribeTrustStores
+              - elasticloadbalancing:DescribeCapacityReservation
             Resource: '*'
           - Effect: Allow
             Action:
@@ -1034,6 +836,9 @@ Resources:
               - elasticloadbalancing:ModifyTargetGroup
               - elasticloadbalancing:ModifyTargetGroupAttributes
               - elasticloadbalancing:DeleteTargetGroup
+              - elasticloadbalancing:ModifyListenerAttributes
+              - elasticloadbalancing:ModifyCapacityReservation
+              - elasticloadbalancing:ModifyIpPools
             Resource: '*'
             Condition:
               'Null':
@@ -1064,293 +869,395 @@ Resources:
               - elasticloadbalancing:AddListenerCertificates
               - elasticloadbalancing:RemoveListenerCertificates
               - elasticloadbalancing:ModifyRule
+              - elasticloadbalancing:SetRulePriorities
             Resource: '*'
 
   ALBControllerRole:
     Type: AWS::IAM::Role
-    DependsOn: OIDCProvider
     Properties:
       RoleName: !Sub '${ClusterName}-ALBControllerRole'
       AssumeRolePolicyDocument:
-        Fn::Sub:
-          - |
-            {
-              "Version": "2012-10-17",
-              "Statement": [{
-                "Effect": "Allow",
-                "Principal": {
-                  "Federated": "arn:${Partition}:iam::${AccountId}:oidc-provider/${OidcHost}"
-                },
-                "Action": "sts:AssumeRoleWithWebIdentity",
-                "Condition": {
-                  "StringEquals": {
-                    "${OidcHost}:aud": "sts.amazonaws.com",
-                    "${OidcHost}:sub": "system:serviceaccount:kube-system:aws-load-balancer-controller"
-                  }
-                }
-              }]
-            }
-          - OidcHost: !Select [1, !Split ["//", !GetAtt EKSCluster.OpenIdConnectIssuerUrl]]
-            Partition: !Ref AWS::Partition
-            AccountId: !Ref AWS::AccountId
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: pods.eks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
       ManagedPolicyArns:
         - !Ref ALBControllerPolicy
 
   # ===========================================================================
-  # 7. Karpenter IAM & SQS
+  # 7. Karpenter IAM & SQS (official v1.9.0 resources + Pod Identity)
   # ===========================================================================
 
   KarpenterNodeRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub 'KarpenterNodeRole-${ClusterName}'
+      Path: /
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
-              Service: ec2.amazonaws.com
+              Service: !Sub 'ec2.${AWS::URLSuffix}'
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy'
         - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEKS_CNI_Policy'
-        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly'
         - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
 
-  KarpenterNodeInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      InstanceProfileName: !Sub 'KarpenterNodeInstanceProfile-${ClusterName}'
-      Path: /
-      Roles:
-        - !Ref KarpenterNodeRole
-
-  KarpenterControllerPolicy:
+  NodeLifecyclePolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      ManagedPolicyName: !Sub 'KarpenterControllerPolicy-${ClusterName}'
-      Description: Karpenter controller policy for EC2, pricing, SSM, EKS, SQS, IAM
-      PolicyDocument:
-        Fn::Sub:
-          - |
+      ManagedPolicyName: !Sub 'KarpenterControllerNodeLifecyclePolicy-${ClusterName}'
+      Path: /
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
             {
-              "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Sid": "AllowScopedEC2InstanceAccessActions",
-                  "Effect": "Allow",
-                  "Action": ["ec2:RunInstances", "ec2:CreateFleet"],
-                  "Resource": [
-                    "arn:${Partition}:ec2:${Region}::image/*",
-                    "arn:${Partition}:ec2:${Region}::snapshot/*",
-                    "arn:${Partition}:ec2:${Region}:*:security-group/*",
-                    "arn:${Partition}:ec2:${Region}:*:subnet/*"
+              "Sid": "AllowScopedEC2InstanceAccessActions",
+              "Effect": "Allow",
+              "Resource": [
+                "arn:${AWS::Partition}:ec2:${AWS::Region}::image/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}::snapshot/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:security-group/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:subnet/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:capacity-reservation/*"
+              ],
+              "Action": [
+                "ec2:RunInstances",
+                "ec2:CreateFleet"
+              ]
+            },
+            {
+              "Sid": "AllowScopedEC2LaunchTemplateAccessActions",
+              "Effect": "Allow",
+              "Resource": "arn:${AWS::Partition}:ec2:${AWS::Region}:*:launch-template/*",
+              "Action": [
+                "ec2:RunInstances",
+                "ec2:CreateFleet"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/kubernetes.io/cluster/${ClusterName}": "owned"
+                },
+                "StringLike": {
+                  "aws:ResourceTag/karpenter.sh/nodepool": "*"
+                }
+              }
+            },
+            {
+              "Sid": "AllowScopedEC2InstanceActionsWithTags",
+              "Effect": "Allow",
+              "Resource": [
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:fleet/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:instance/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:volume/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:network-interface/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:launch-template/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:spot-instances-request/*"
+              ],
+              "Action": [
+                "ec2:RunInstances",
+                "ec2:CreateFleet",
+                "ec2:CreateLaunchTemplate"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/kubernetes.io/cluster/${ClusterName}": "owned",
+                  "aws:RequestTag/eks:eks-cluster-name": "${ClusterName}"
+                },
+                "StringLike": {
+                  "aws:RequestTag/karpenter.sh/nodepool": "*"
+                }
+              }
+            },
+            {
+              "Sid": "AllowScopedResourceCreationTagging",
+              "Effect": "Allow",
+              "Resource": [
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:fleet/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:instance/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:volume/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:network-interface/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:launch-template/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:spot-instances-request/*"
+              ],
+              "Action": "ec2:CreateTags",
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/kubernetes.io/cluster/${ClusterName}": "owned",
+                  "aws:RequestTag/eks:eks-cluster-name": "${ClusterName}",
+                  "ec2:CreateAction": [
+                    "RunInstances",
+                    "CreateFleet",
+                    "CreateLaunchTemplate"
                   ]
                 },
-                {
-                  "Sid": "AllowScopedEC2LaunchTemplateAccessActions",
-                  "Effect": "Allow",
-                  "Action": ["ec2:RunInstances", "ec2:CreateFleet"],
-                  "Resource": ["arn:${Partition}:ec2:${Region}:*:launch-template/*"],
-                  "Condition": {
-                    "StringEquals": { "aws:ResourceTag/kubernetes.io/cluster/${Cluster}": "owned" },
-                    "StringLike": { "aws:ResourceTag/karpenter.sh/nodepool": "*" }
-                  }
-                },
-                {
-                  "Sid": "AllowScopedEC2InstanceActionsWithTags",
-                  "Effect": "Allow",
-                  "Action": ["ec2:RunInstances", "ec2:CreateFleet", "ec2:CreateLaunchTemplate"],
-                  "Resource": [
-                    "arn:${Partition}:ec2:${Region}:*:fleet/*",
-                    "arn:${Partition}:ec2:${Region}:*:instance/*",
-                    "arn:${Partition}:ec2:${Region}:*:volume/*",
-                    "arn:${Partition}:ec2:${Region}:*:network-interface/*",
-                    "arn:${Partition}:ec2:${Region}:*:launch-template/*",
-                    "arn:${Partition}:ec2:${Region}:*:spot-instances-request/*"
-                  ],
-                  "Condition": {
-                    "StringEquals": { "aws:RequestTag/kubernetes.io/cluster/${Cluster}": "owned" },
-                    "StringLike": { "aws:RequestTag/karpenter.sh/nodepool": "*" }
-                  }
-                },
-                {
-                  "Sid": "AllowScopedResourceCreationTagging",
-                  "Effect": "Allow",
-                  "Action": "ec2:CreateTags",
-                  "Resource": [
-                    "arn:${Partition}:ec2:${Region}:*:fleet/*",
-                    "arn:${Partition}:ec2:${Region}:*:instance/*",
-                    "arn:${Partition}:ec2:${Region}:*:volume/*",
-                    "arn:${Partition}:ec2:${Region}:*:network-interface/*",
-                    "arn:${Partition}:ec2:${Region}:*:launch-template/*",
-                    "arn:${Partition}:ec2:${Region}:*:spot-instances-request/*"
-                  ],
-                  "Condition": {
-                    "StringEquals": {
-                      "aws:RequestTag/kubernetes.io/cluster/${Cluster}": "owned",
-                      "ec2:CreateAction": ["RunInstances", "CreateFleet", "CreateLaunchTemplate"]
-                    },
-                    "StringLike": { "aws:RequestTag/karpenter.sh/nodepool": "*" }
-                  }
-                },
-                {
-                  "Sid": "AllowScopedResourceTagging",
-                  "Effect": "Allow",
-                  "Action": "ec2:CreateTags",
-                  "Resource": "arn:${Partition}:ec2:${Region}:*:instance/*",
-                  "Condition": {
-                    "StringEquals": { "aws:ResourceTag/kubernetes.io/cluster/${Cluster}": "owned" },
-                    "StringLike": { "aws:ResourceTag/karpenter.sh/nodepool": "*" },
-                    "ForAllValues:StringEquals": { "aws:TagKeys": ["karpenter.sh/nodeclaim", "Name"] }
-                  }
-                },
-                {
-                  "Sid": "AllowScopedDeletion",
-                  "Effect": "Allow",
-                  "Action": ["ec2:TerminateInstances", "ec2:DeleteLaunchTemplate"],
-                  "Resource": [
-                    "arn:${Partition}:ec2:${Region}:*:instance/*",
-                    "arn:${Partition}:ec2:${Region}:*:launch-template/*"
-                  ],
-                  "Condition": {
-                    "StringEquals": { "aws:ResourceTag/kubernetes.io/cluster/${Cluster}": "owned" },
-                    "StringLike": { "aws:ResourceTag/karpenter.sh/nodepool": "*" }
-                  }
-                },
-                {
-                  "Sid": "AllowRegionalReadActions",
-                  "Effect": "Allow",
-                  "Action": [
-                    "ec2:DescribeAvailabilityZones", "ec2:DescribeImages", "ec2:DescribeInstances",
-                    "ec2:DescribeInstanceTypeOfferings", "ec2:DescribeInstanceTypes",
-                    "ec2:DescribeLaunchTemplates", "ec2:DescribeSecurityGroups",
-                    "ec2:DescribeSpotPriceHistory", "ec2:DescribeSubnets"
-                  ],
-                  "Resource": "*",
-                  "Condition": { "StringEquals": { "aws:RequestedRegion": "${Region}" } }
-                },
-                {
-                  "Sid": "AllowSSMReadActions",
-                  "Effect": "Allow",
-                  "Action": "ssm:GetParameter",
-                  "Resource": "arn:${Partition}:ssm:${Region}::parameter/aws/service/*"
-                },
-                {
-                  "Sid": "AllowPricingReadActions",
-                  "Effect": "Allow",
-                  "Action": "pricing:GetProducts",
-                  "Resource": "*"
-                },
-                {
-                  "Sid": "AllowSQSActions",
-                  "Effect": "Allow",
-                  "Action": ["sqs:DeleteMessage", "sqs:GetQueueUrl", "sqs:ReceiveMessage"],
-                  "Resource": "${SQSArn}"
-                },
-                {
-                  "Sid": "AllowPassingInstanceRole",
-                  "Effect": "Allow",
-                  "Action": "iam:PassRole",
-                  "Resource": "${NodeRoleArn}",
-                  "Condition": { "StringEquals": { "iam:PassedToService": "ec2.amazonaws.com" } }
-                },
-                {
-                  "Sid": "AllowScopedInstanceProfileCreationActions",
-                  "Effect": "Allow",
-                  "Action": "iam:CreateInstanceProfile",
-                  "Resource": "*",
-                  "Condition": {
-                    "StringEquals": {
-                      "aws:RequestTag/kubernetes.io/cluster/${Cluster}": "owned",
-                      "aws:RequestTag/topology.kubernetes.io/region": "${Region}"
-                    },
-                    "StringLike": { "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*" }
-                  }
-                },
-                {
-                  "Sid": "AllowScopedInstanceProfileTagActions",
-                  "Effect": "Allow",
-                  "Action": "iam:TagInstanceProfile",
-                  "Resource": "*",
-                  "Condition": {
-                    "StringEquals": {
-                      "aws:ResourceTag/kubernetes.io/cluster/${Cluster}": "owned",
-                      "aws:ResourceTag/topology.kubernetes.io/region": "${Region}"
-                    },
-                    "StringLike": { "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*" }
-                  }
-                },
-                {
-                  "Sid": "AllowScopedInstanceProfileActions",
-                  "Effect": "Allow",
-                  "Action": ["iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile", "iam:DeleteInstanceProfile"],
-                  "Resource": "*",
-                  "Condition": {
-                    "StringEquals": {
-                      "aws:ResourceTag/kubernetes.io/cluster/${Cluster}": "owned",
-                      "aws:ResourceTag/topology.kubernetes.io/region": "${Region}"
-                    },
-                    "StringLike": { "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*" }
-                  }
-                },
-                {
-                  "Sid": "AllowInstanceProfileReadActions",
-                  "Effect": "Allow",
-                  "Action": "iam:GetInstanceProfile",
-                  "Resource": "*"
-                },
-                {
-                  "Sid": "AllowAPIServerEndpointDiscovery",
-                  "Effect": "Allow",
-                  "Action": "eks:DescribeCluster",
-                  "Resource": "arn:${Partition}:eks:${Region}:${AccountId}:cluster/${Cluster}"
+                "StringLike": {
+                  "aws:RequestTag/karpenter.sh/nodepool": "*"
                 }
+              }
+            },
+            {
+              "Sid": "AllowScopedResourceTagging",
+              "Effect": "Allow",
+              "Resource": "arn:${AWS::Partition}:ec2:${AWS::Region}:*:instance/*",
+              "Action": "ec2:CreateTags",
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/kubernetes.io/cluster/${ClusterName}": "owned"
+                },
+                "StringLike": {
+                  "aws:ResourceTag/karpenter.sh/nodepool": "*"
+                },
+                "StringEqualsIfExists": {
+                  "aws:RequestTag/eks:eks-cluster-name": "${ClusterName}"
+                },
+                "ForAllValues:StringEquals": {
+                  "aws:TagKeys": [
+                    "eks:eks-cluster-name",
+                    "karpenter.sh/nodeclaim",
+                    "Name"
+                  ]
+                }
+              }
+            },
+            {
+              "Sid": "AllowScopedDeletion",
+              "Effect": "Allow",
+              "Resource": [
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:instance/*",
+                "arn:${AWS::Partition}:ec2:${AWS::Region}:*:launch-template/*"
+              ],
+              "Action": [
+                "ec2:TerminateInstances",
+                "ec2:DeleteLaunchTemplate"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/kubernetes.io/cluster/${ClusterName}": "owned"
+                },
+                "StringLike": {
+                  "aws:ResourceTag/karpenter.sh/nodepool": "*"
+                }
+              }
+            }
+          ]
+        }
+
+  IAMIntegrationPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'KarpenterControllerIAMIntegrationPolicy-${ClusterName}'
+      Path: /
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowPassingInstanceRole",
+              "Effect": "Allow",
+              "Resource": "${KarpenterNodeRole.Arn}",
+              "Action": "iam:PassRole",
+              "Condition": {
+                "StringEquals": {
+                  "iam:PassedToService": [
+                    "ec2.amazonaws.com",
+                    "ec2.amazonaws.com.cn"
+                  ]
+                }
+              }
+            },
+            {
+              "Sid": "AllowScopedInstanceProfileCreationActions",
+              "Effect": "Allow",
+              "Resource": "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/*",
+              "Action": [
+                "iam:CreateInstanceProfile"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/kubernetes.io/cluster/${ClusterName}": "owned",
+                  "aws:RequestTag/eks:eks-cluster-name": "${ClusterName}",
+                  "aws:RequestTag/topology.kubernetes.io/region": "${AWS::Region}"
+                },
+                "StringLike": {
+                  "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*"
+                }
+              }
+            },
+            {
+              "Sid": "AllowScopedInstanceProfileTagActions",
+              "Effect": "Allow",
+              "Resource": "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/*",
+              "Action": [
+                "iam:TagInstanceProfile"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/kubernetes.io/cluster/${ClusterName}": "owned",
+                  "aws:ResourceTag/topology.kubernetes.io/region": "${AWS::Region}",
+                  "aws:RequestTag/kubernetes.io/cluster/${ClusterName}": "owned",
+                  "aws:RequestTag/eks:eks-cluster-name": "${ClusterName}",
+                  "aws:RequestTag/topology.kubernetes.io/region": "${AWS::Region}"
+                },
+                "StringLike": {
+                  "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*",
+                  "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*"
+                }
+              }
+            },
+            {
+              "Sid": "AllowScopedInstanceProfileActions",
+              "Effect": "Allow",
+              "Resource": "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/*",
+              "Action": [
+                "iam:AddRoleToInstanceProfile",
+                "iam:RemoveRoleFromInstanceProfile",
+                "iam:DeleteInstanceProfile"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/kubernetes.io/cluster/${ClusterName}": "owned",
+                  "aws:ResourceTag/topology.kubernetes.io/region": "${AWS::Region}"
+                },
+                "StringLike": {
+                  "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*"
+                }
+              }
+            }
+          ]
+        }
+
+  EKSIntegrationPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'KarpenterControllerEKSIntegrationPolicy-${ClusterName}'
+      Path: /
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowAPIServerEndpointDiscovery",
+              "Effect": "Allow",
+              "Resource": "arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}",
+              "Action": "eks:DescribeCluster"
+            }
+          ]
+        }
+
+  InterruptionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'KarpenterControllerInterruptionPolicy-${ClusterName}'
+      Path: /
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowInterruptionQueueActions",
+              "Effect": "Allow",
+              "Resource": "${KarpenterInterruptionQueue.Arn}",
+              "Action": [
+                "sqs:DeleteMessage",
+                "sqs:GetQueueUrl",
+                "sqs:ReceiveMessage"
               ]
             }
-          - Partition: !Ref AWS::Partition
-            Region: !Ref AWS::Region
-            AccountId: !Ref AWS::AccountId
-            Cluster: !Ref ClusterName
-            SQSArn: !GetAtt KarpenterInterruptionQueue.Arn
-            NodeRoleArn: !GetAtt KarpenterNodeRole.Arn
+          ]
+        }
+
+  ResourceDiscoveryPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'KarpenterControllerResourceDiscoveryPolicy-${ClusterName}'
+      Path: /
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowRegionalReadActions",
+              "Effect": "Allow",
+              "Resource": "*",
+              "Action": [
+                "ec2:DescribeCapacityReservations",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceTypeOfferings",
+                "ec2:DescribeInstanceTypes",
+                "ec2:DescribeLaunchTemplates",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSpotPriceHistory",
+                "ec2:DescribeSubnets"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestedRegion": "${AWS::Region}"
+                }
+              }
+            },
+            {
+              "Sid": "AllowSSMReadActions",
+              "Effect": "Allow",
+              "Resource": "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/*",
+              "Action": "ssm:GetParameter"
+            },
+            {
+              "Sid": "AllowPricingReadActions",
+              "Effect": "Allow",
+              "Resource": "*",
+              "Action": "pricing:GetProducts"
+            },
+            {
+              "Sid": "AllowUnscopedInstanceProfileListAction",
+              "Effect": "Allow",
+              "Resource": "*",
+              "Action": "iam:ListInstanceProfiles"
+            },
+            {
+              "Sid": "AllowInstanceProfileReadActions",
+              "Effect": "Allow",
+              "Resource": "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/*",
+              "Action": "iam:GetInstanceProfile"
+            }
+          ]
+        }
 
   KarpenterControllerRole:
     Type: AWS::IAM::Role
-    DependsOn: OIDCProvider
     Properties:
       RoleName: !Sub 'KarpenterControllerRole-${ClusterName}'
       AssumeRolePolicyDocument:
-        Fn::Sub:
-          - |
-            {
-              "Version": "2012-10-17",
-              "Statement": [{
-                "Effect": "Allow",
-                "Principal": {
-                  "Federated": "arn:${Partition}:iam::${AccountId}:oidc-provider/${OidcHost}"
-                },
-                "Action": "sts:AssumeRoleWithWebIdentity",
-                "Condition": {
-                  "StringEquals": {
-                    "${OidcHost}:aud": "sts.amazonaws.com",
-                    "${OidcHost}:sub": "system:serviceaccount:kube-system:karpenter"
-                  }
-                }
-              }]
-            }
-          - OidcHost: !Select [1, !Split ["//", !GetAtt EKSCluster.OpenIdConnectIssuerUrl]]
-            Partition: !Ref AWS::Partition
-            AccountId: !Ref AWS::AccountId
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: pods.eks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
       ManagedPolicyArns:
-        - !Ref KarpenterControllerPolicy
+        - !Ref NodeLifecyclePolicy
+        - !Ref IAMIntegrationPolicy
+        - !Ref EKSIntegrationPolicy
+        - !Ref InterruptionPolicy
+        - !Ref ResourceDiscoveryPolicy
 
   # --- SQS Queue for Spot Interruption ---
 
   KarpenterInterruptionQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Ref ClusterName
+      QueueName: !Sub '${ClusterName}'
       MessageRetentionPeriod: 300
       SqsManagedSseEnabled: true
 
@@ -1360,23 +1267,29 @@ Resources:
       Queues:
         - !Ref KarpenterInterruptionQueue
       PolicyDocument:
-        Version: '2012-10-17'
+        Id: EC2InterruptionPolicy
         Statement:
-          - Sid: AllowEventBridge
-            Effect: Allow
+          - Effect: Allow
             Principal:
               Service:
                 - events.amazonaws.com
                 - sqs.amazonaws.com
             Action: sqs:SendMessage
             Resource: !GetAtt KarpenterInterruptionQueue.Arn
+          - Sid: DenyHTTP
+            Effect: Deny
+            Action: sqs:*
+            Resource: !GetAtt KarpenterInterruptionQueue.Arn
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+            Principal: '*'
 
   # --- EventBridge Rules ---
 
   ScheduledChangeRule:
     Type: AWS::Events::Rule
     Properties:
-      Name: !Sub '${ClusterName}-ScheduledChange'
       EventPattern:
         source:
           - aws.health
@@ -1389,7 +1302,6 @@ Resources:
   SpotInterruptionRule:
     Type: AWS::Events::Rule
     Properties:
-      Name: !Sub '${ClusterName}-SpotInterruption'
       EventPattern:
         source:
           - aws.ec2
@@ -1402,7 +1314,6 @@ Resources:
   RebalanceRule:
     Type: AWS::Events::Rule
     Properties:
-      Name: !Sub '${ClusterName}-Rebalance'
       EventPattern:
         source:
           - aws.ec2
@@ -1415,7 +1326,6 @@ Resources:
   InstanceStateChangeRule:
     Type: AWS::Events::Rule
     Properties:
-      Name: !Sub '${ClusterName}-InstanceStateChange'
       EventPattern:
         source:
           - aws.ec2
@@ -1512,6 +1422,8 @@ Resources:
               - iam:GetPolicyVersion
               - iam:ListPolicyVersions
               - iam:TagPolicy
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicyVersion
               - iam:CreateOpenIDConnectProvider
               - iam:DeleteOpenIDConnectProvider
               - iam:GetOpenIDConnectProvider
@@ -1657,6 +1569,18 @@ Resources:
             Action:
               - pricing:GetProducts
             Resource: "*"
+          - Sid: CloudFront
+            Effect: Allow
+            Action:
+              - cloudfront:CreateDistribution
+              - cloudfront:GetDistribution
+              - cloudfront:GetDistributionConfig
+              - cloudfront:UpdateDistribution
+              - cloudfront:DeleteDistribution
+              - cloudfront:ListDistributions
+              - cloudfront:TagResource
+              - cloudfront:CreateInvalidation
+            Resource: "*"
 
   IdeInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -1704,31 +1628,50 @@ Resources:
                   set -e
 
                   # Install system packages
-                  yum install -y git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip
+                  yum install -y git tar gzip vim nodejs npm make gcc g++ argon2 jq unzip docker
+                  systemctl enable --now docker
+                  usermod -aG docker ec2-user
 
                   # Install AWS CLI v2
                   if ! command -v aws &>/dev/null || [[ $(aws --version 2>&1) != *"aws-cli/2"* ]]; then
-                    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+                    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "/tmp/awscliv2.zip"
                     unzip -qo /tmp/awscliv2.zip -d /tmp
                     /tmp/aws/install --update
                     rm -rf /tmp/aws /tmp/awscliv2.zip
                   fi
 
                   # Install kubectl
-                  curl -fsSL "https://dl.k8s.io/release/v1.34.0/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
+                  curl -fsSL "https://dl.k8s.io/release/v1.34.0/bin/linux/arm64/kubectl" -o /usr/local/bin/kubectl
                   chmod +x /usr/local/bin/kubectl
 
                   # Install helm
                   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
                   # Install eksctl
-                  ARCH=amd64
+                  ARCH=arm64
                   PLATFORM=$(uname -s)_$ARCH
                   curl -fsSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz" | tar xz -C /usr/local/bin
 
                   # Install Caddy (reverse proxy for code-server)
-                  dnf copr enable -y @caddy/caddy epel-9-x86_64 || true
-                  dnf install -y caddy || yum install -y caddy
+                  curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=arm64" -o /usr/local/bin/caddy
+                  chmod +x /usr/local/bin/caddy
+                  useradd --system --home /var/lib/caddy --shell /usr/sbin/nologin caddy 2>/dev/null || true
+                  mkdir -p /etc/caddy /var/lib/caddy /var/log/caddy
+                  chown caddy:caddy /var/lib/caddy /var/log/caddy
+                  tee /etc/systemd/system/caddy.service <<CADDYSVC
+                  [Unit]
+                  Description=Caddy
+                  After=network.target
+                  [Service]
+                  User=caddy
+                  Group=caddy
+                  ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile
+                  ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile
+                  Restart=on-failure
+                  [Install]
+                  WantedBy=multi-user.target
+                  CADDYSVC
+                  systemctl daemon-reload
                   systemctl enable --now caddy
 
                   # Configure Caddy
@@ -1739,11 +1682,13 @@ Resources:
                   EOF
                   systemctl restart caddy
 
-                  # Custom prompt
+                  # Custom prompt and environment variables
                   tee /etc/profile.d/openclaw_env.sh <<'EOF'
                   export PROMPT_COMMAND='export PS1="\u@openclaw-ide:\w$ "'
                   export AWS_REGION=${AWS::Region}
+                  export CLUSTER_NAME=${ClusterName}
                   export EKS_CLUSTER_NAME=${ClusterName}
+                  export AWS_ACCOUNT_ID=${AWS::AccountId}
                   EOF
 
                   # Setup for ec2-user
@@ -1755,7 +1700,7 @@ Resources:
                   # Install code-server
                   codeServer=$(rpm -qa code-server | wc -l)
                   if [ "$codeServer" -eq "0" ]; then
-                    curl -Ls -o /tmp/coder.rpm https://github.com/coder/code-server/releases/download/v${CodeServerVersion}/code-server-${CodeServerVersion}-amd64.rpm
+                    curl -Ls -o /tmp/coder.rpm https://github.com/coder/code-server/releases/download/v${CodeServerVersion}/code-server-${CodeServerVersion}-arm64.rpm
                     sudo rpm -U "/tmp/coder.rpm"
                     sudo systemctl enable --now code-server@ec2-user
                   fi
@@ -1780,6 +1725,17 @@ Resources:
                   aws eks update-kubeconfig \
                     --name ${ClusterName} \
                     --region ${AWS::Region}
+
+                  # Write environment variables to .bashrc (code-server terminals source this)
+                  cat >> ~/.bashrc << 'ENVEOF'
+
+                  # === OpenClaw Workshop Environment ===
+                  export AWS_REGION=${AWS::Region}
+                  export CLUSTER_NAME=${ClusterName}
+                  export EKS_CLUSTER_NAME=${ClusterName}
+                  export AWS_ACCOUNT_ID=${AWS::AccountId}
+                  export PS1="\u@openclaw-ide:\w\$ "
+                  ENVEOF
 
                   # Verify tools
                   echo "=== Tool versions ==="
@@ -1900,6 +1856,8 @@ Resources:
     Type: Custom::BootstrapIDE
     DependsOn:
       - BootstrapLambdaRole
+      - IdeAccessEntry
+      - SystemNodeGroup
     Properties:
       ServiceToken: !GetAtt BootstrapLambdaFunction.Arn
       InstanceId: !Ref IdeInstance
@@ -1933,7 +1891,21 @@ Resources:
           Value: openclaw
 
   # ===========================================================================
-  # 14. IDE - CloudFront Distribution
+  # 14. IAM Identity Center (required for EKS Capabilities ArgoCD)
+  # ===========================================================================
+
+  IdentityCenterInstance:
+    Type: AWS::SSO::Instance
+    Properties:
+      Name: !Sub '${ClusterName}-sso'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ClusterName}-identity-center'
+        - Key: Project
+          Value: openclaw
+
+  # ===========================================================================
+  # 15. IDE - CloudFront Distribution
   # ===========================================================================
 
   IdeCachePolicy:
@@ -1994,9 +1966,6 @@ Resources:
 # Outputs
 # =============================================================================
 Outputs:
-  TrialUseOnlyRoleArn:
-    Description: ARN of the TrialUseOnlyRole
-    Value: !GetAtt TrialUseOnlyRole.Arn
   ########################################
   # Lab CFn Outputs
   ########################################
@@ -2065,6 +2034,15 @@ Outputs:
   KarpenterInterruptionQueueName:
     Description: SQS queue name for Karpenter interruption handling
     Value: !GetAtt KarpenterInterruptionQueue.QueueName
+
+  # --- Identity Center Outputs ---
+  IdentityCenterInstanceArn:
+    Description: IAM Identity Center instance ARN (required for EKS Capabilities ArgoCD)
+    Value: !GetAtt IdentityCenterInstance.InstanceArn
+
+  IdentityStoreId:
+    Description: Identity Store ID associated with the Identity Center instance
+    Value: !GetAtt IdentityCenterInstance.IdentityStoreId
 
   # --- IDE Outputs ---
   IdeUrl:
