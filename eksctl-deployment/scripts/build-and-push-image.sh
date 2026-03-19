@@ -8,7 +8,7 @@
 #   Run from local (deploys only): ./build-and-push-image.sh local
 #
 
-set -e
+set -euo pipefail
 
 # Colors
 GREEN='\033[0;32m'
