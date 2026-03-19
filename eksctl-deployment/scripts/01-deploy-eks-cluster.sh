@@ -19,7 +19,7 @@ echo ""
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="${SCRIPT_DIR}/../configs"
-AWS_REGION=${AWS_REGION:-"us-east-1"}
+AWS_REGION=${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}
 
 # ============================================================================
 # Step 1: Select Configuration
