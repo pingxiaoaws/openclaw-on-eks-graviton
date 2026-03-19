@@ -39,7 +39,7 @@ export KARPENTER_NAMESPACE="kube-system"
 export KARPENTER_VERSION="1.9.0"
 export CLUSTER_NAME=$(kubectl config current-context | cut -d'/' -f2)
 export AWS_DEFAULT_REGION=$(kubectl config current-context | cut -d':' -f4)
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
 export AWS_PARTITION="aws"
 export TEMPOUT=$(mktemp)
 

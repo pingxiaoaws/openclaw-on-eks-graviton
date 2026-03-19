@@ -83,7 +83,7 @@ else
   AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
   CLUSTER_NAME="unknown"
 fi
-AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+AWS_ACCOUNT=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
 
 echo "Cluster: $CLUSTER_NAME"
 echo "Region:  $AWS_REGION"
