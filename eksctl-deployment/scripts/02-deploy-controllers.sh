@@ -224,6 +224,11 @@ else
     --region "$AWS_REGION"
 
   echo -e "${GREEN}✅ EFS CSI Pod Identity association created${NC}"
+
+  # Restart EFS CSI controller so it picks up the new Pod Identity credentials
+  echo "Restarting EFS CSI controller to pick up new credentials..."
+  kubectl rollout restart deployment efs-csi-controller -n kube-system
+  kubectl rollout status deployment efs-csi-controller -n kube-system --timeout=60s
 fi
 
 echo ""
@@ -412,6 +417,11 @@ else
         --region "$AWS_REGION"
 
       echo -e "${GREEN}✅ ALB Controller Pod Identity association created${NC}"
+
+      # Restart ALB controller so it picks up the new Pod Identity credentials
+      echo "Restarting ALB controller to pick up new credentials..."
+      kubectl rollout restart deployment aws-load-balancer-controller -n kube-system
+      kubectl rollout status deployment aws-load-balancer-controller -n kube-system --timeout=60s
     fi
   else
     # Download IAM policy
