@@ -22,13 +22,14 @@ echo "OpenClaw Provisioning - Complete Deploy"
 echo "=========================================="
 echo ""
 
-# Configuration
-REPO_DIR="$HOME/openclaw-on-eks-graviton"
-ECR_REGISTRY="970547376847.dkr.ecr.us-west-2.amazonaws.com"
-ECR_REPO="openclaw-provisioning-chinaregion"
-IMAGE_TAG="latest"
-REGION="us-west-2"
-CLOUDFRONT_DIST_ID="EVL5DO4JCHMXB"
+# Configuration (use env vars when available, fall back to defaults)
+REPO_DIR="${REPO_DIR:-$HOME/openclaw-on-eks-graviton}"
+REGION="${AWS_REGION:-${REGION:-us-west-2}}"
+AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}"
+ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+ECR_REPO="${ECR_REPO:-openclaw-provisioning-chinaregion}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+CLOUDFRONT_DIST_ID="${CLOUDFRONT_DIST_ID:-}"
 K8S_NAMESPACE="openclaw-provisioning"
 K8S_DEPLOYMENT="openclaw-provisioning"
 
@@ -137,23 +138,28 @@ else
 fi
 echo ""
 
-# Step 7: Invalidate CloudFront cache
+# Step 7: Invalidate CloudFront cache (optional)
 echo -e "${YELLOW}Step 7/7: Invalidating CloudFront cache${NC}"
-INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
-  --distribution-id "$CLOUDFRONT_DIST_ID" \
-  --paths "/*" \
-  --query 'Invalidation.{Id:Id,Status:Status}' \
-  --output json 2>&1)
-
-if [ $? -eq 0 ]; then
-    INVALIDATION_ID=$(echo "$INVALIDATION_OUTPUT" | jq -r '.Id')
-    echo -e "${GREEN}✅ CloudFront cache invalidation created${NC}"
-    echo "   Invalidation ID: $INVALIDATION_ID"
-    echo "   Status: InProgress (will complete in 1-2 minutes)"
+if [ -z "$CLOUDFRONT_DIST_ID" ]; then
+    echo -e "${YELLOW}⚠️  CLOUDFRONT_DIST_ID not set, skipping cache invalidation${NC}"
+    INVALIDATION_ID="N/A"
 else
-    echo -e "${RED}❌ Failed to create invalidation${NC}"
-    echo "$INVALIDATION_OUTPUT"
-    exit 1
+    INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
+      --distribution-id "$CLOUDFRONT_DIST_ID" \
+      --paths "/*" \
+      --query 'Invalidation.{Id:Id,Status:Status}' \
+      --output json 2>&1)
+
+    if [ $? -eq 0 ]; then
+        INVALIDATION_ID=$(echo "$INVALIDATION_OUTPUT" | jq -r '.Id')
+        echo -e "${GREEN}✅ CloudFront cache invalidation created${NC}"
+        echo "   Invalidation ID: $INVALIDATION_ID"
+        echo "   Status: InProgress (will complete in 1-2 minutes)"
+    else
+        echo -e "${RED}❌ Failed to create invalidation${NC}"
+        echo "$INVALIDATION_OUTPUT"
+        exit 1
+    fi
 fi
 echo ""
 
