@@ -394,12 +394,21 @@ echo ""
 
 echo -e "${BLUE}[4/9] Building and pushing Docker image (optional)...${NC}"
 echo ""
-echo "Do you want to build and push a new Docker image?"
-echo "  yes - Build new image from source code"
-echo "  no  - Skip and use existing image (default)"
-echo ""
-read -p "Build new image? (yes/no, default: no): " BUILD_IMAGE
-BUILD_IMAGE=${BUILD_IMAGE:-no}
+
+# Support BUILD_IMAGE env var for non-interactive use
+if [ -z "${BUILD_IMAGE:-}" ]; then
+  if [ -t 0 ]; then
+    echo "Do you want to build and push a new Docker image?"
+    echo "  yes - Build new image from source code"
+    echo "  no  - Skip and use existing image (default)"
+    echo ""
+    read -p "Build new image? (yes/no, default: no): " BUILD_IMAGE
+    BUILD_IMAGE=${BUILD_IMAGE:-no}
+  else
+    echo "Non-interactive mode detected, skipping image build (set BUILD_IMAGE=yes to override)"
+    BUILD_IMAGE="no"
+  fi
+fi
 
 if [[ "$BUILD_IMAGE" =~ ^[Yy](es)?$ ]]; then
   echo ""
@@ -482,7 +491,7 @@ spec:
       serviceAccountName: openclaw-provisioner
       containers:
       - name: provisioning
-        image: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning-chinaregion:latest
+        image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
