@@ -390,6 +390,29 @@ else
       --set serviceAccount.create=true \
       --set serviceAccount.name=aws-load-balancer-controller \
       --wait
+
+    # Create Pod Identity Association for ALB Controller (CFN role needs this)
+    EXISTING_ALB_ASSOC=$(aws eks list-pod-identity-associations \
+      --cluster-name "$CLUSTER_NAME" \
+      --region "$AWS_REGION" \
+      --namespace kube-system \
+      --service-account aws-load-balancer-controller \
+      --query 'associations[0].associationId' \
+      --output text 2>/dev/null || echo "")
+
+    if [ -n "$EXISTING_ALB_ASSOC" ] && [ "$EXISTING_ALB_ASSOC" != "None" ]; then
+      echo -e "${YELLOW}⚠️  ALB Controller Pod Identity association already exists: $EXISTING_ALB_ASSOC${NC}"
+    else
+      echo "Creating Pod Identity association for ALB Controller..."
+      aws eks create-pod-identity-association \
+        --cluster-name "$CLUSTER_NAME" \
+        --namespace kube-system \
+        --service-account aws-load-balancer-controller \
+        --role-arn "$CFN_ALB_ROLE_ARN" \
+        --region "$AWS_REGION"
+
+      echo -e "${GREEN}✅ ALB Controller Pod Identity association created${NC}"
+    fi
   else
     # Download IAM policy
     curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json

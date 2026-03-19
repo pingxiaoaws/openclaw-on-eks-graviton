@@ -226,6 +226,31 @@ helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
 
 print_status "Karpenter installed successfully"
 
+# Create Pod Identity Association for Karpenter (when using CFN-provisioned role)
+if [ "$USE_CFN_KARPENTER" = true ]; then
+  EXISTING_KARPENTER_ASSOC=$(aws eks list-pod-identity-associations \
+    --cluster-name "$CLUSTER_NAME" \
+    --region "$AWS_DEFAULT_REGION" \
+    --namespace "${KARPENTER_NAMESPACE}" \
+    --service-account karpenter \
+    --query 'associations[0].associationId' \
+    --output text 2>/dev/null || echo "")
+
+  if [ -n "$EXISTING_KARPENTER_ASSOC" ] && [ "$EXISTING_KARPENTER_ASSOC" != "None" ]; then
+    print_warning "Karpenter Pod Identity association already exists: $EXISTING_KARPENTER_ASSOC"
+  else
+    print_info "Creating Pod Identity association for Karpenter..."
+    aws eks create-pod-identity-association \
+      --cluster-name "$CLUSTER_NAME" \
+      --namespace "${KARPENTER_NAMESPACE}" \
+      --service-account karpenter \
+      --role-arn "$KARPENTER_CONTROLLER_ROLE_ARN" \
+      --region "$AWS_DEFAULT_REGION"
+
+    print_status "Karpenter Pod Identity association created"
+  fi
+fi
+
 # Wait for Karpenter to be ready
 print_info "Waiting for Karpenter pods to be ready..."
 kubectl wait --for=condition=ready pod -n ${KARPENTER_NAMESPACE} -l app.kubernetes.io/name=karpenter --timeout=120s
