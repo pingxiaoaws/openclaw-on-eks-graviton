@@ -26,7 +26,7 @@ echo ""
 
 # Get cluster info (resolve from cluster ARN, not context name which may be an alias)
 CLUSTER_ARN=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')
-if [[ "$CLUSTER_ARN" == arn:aws:eks:* ]]; then
+if [[ "$CLUSTER_ARN" == arn:aws*:eks:* ]]; then
   AWS_REGION=$(echo "$CLUSTER_ARN" | cut -d':' -f4)
   CLUSTER_NAME=$(echo "$CLUSTER_ARN" | cut -d'/' -f2)
 else
@@ -36,6 +36,12 @@ else
   AWS_REGION=$(echo "$CONTEXT" | grep -o 'us-[a-z]*-[0-9]' || echo "us-east-1")
 fi
 AWS_ACCOUNT=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
+if [[ "$AWS_REGION" == cn-* ]]; then
+  AWS_PARTITION="aws-cn"
+else
+  AWS_PARTITION="aws"
+fi
+export AWS_PARTITION
 PROVISIONING_DIR="$(dirname "$0")/../../eks-pod-service"
 
 echo "Cluster: $CLUSTER_NAME"
@@ -87,7 +93,7 @@ fi
 echo -e "${BLUE}[2/9] Creating Bedrock IAM Role...${NC}"
 
 BEDROCK_POLICY_NAME="OpenClawBedrockAccess"
-BEDROCK_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${BEDROCK_POLICY_NAME}"
+BEDROCK_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/${BEDROCK_POLICY_NAME}"
 
 if aws iam get-policy --policy-arn "$BEDROCK_POLICY_ARN" &>/dev/null; then
   echo -e "${YELLOW}⚠️  Bedrock policy already exists${NC}"
@@ -104,9 +110,9 @@ else
         "bedrock:InvokeModelWithResponseStream"
       ],
       "Resource": [
-        "arn:aws:bedrock:*:*:model/*",
-        "arn:aws:bedrock:*:*:inference-profile/*",
-        "arn:aws:bedrock:*::foundation-model/*"
+        "arn:${AWS_PARTITION}:bedrock:*:*:model/*",
+        "arn:${AWS_PARTITION}:bedrock:*:*:inference-profile/*",
+        "arn:${AWS_PARTITION}:bedrock:*::foundation-model/*"
       ]
     }
   ]
@@ -171,7 +177,7 @@ echo ""
 echo -e "${BLUE}[2.5/9] Creating Provisioning Service IAM Role...${NC}"
 
 PROVISIONING_POLICY_NAME="OpenClawProvisioningServicePolicy"
-PROVISIONING_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${PROVISIONING_POLICY_NAME}"
+PROVISIONING_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/${PROVISIONING_POLICY_NAME}"
 
 if aws iam get-policy --policy-arn "$PROVISIONING_POLICY_ARN" &>/dev/null; then
   echo -e "${YELLOW}⚠️  Provisioning service policy already exists, updating...${NC}"
@@ -193,7 +199,7 @@ if aws iam get-policy --policy-arn "$PROVISIONING_POLICY_ARN" &>/dev/null; then
         "iam:DetachRolePolicy",
         "iam:ListAttachedRolePolicies"
       ],
-      "Resource": "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
+      "Resource": "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
     },
     {
       "Sid": "PassRoleToServiceAccounts",
@@ -202,8 +208,8 @@ if aws iam get-policy --policy-arn "$PROVISIONING_POLICY_ARN" &>/dev/null; then
         "iam:PassRole"
       ],
       "Resource": [
-        "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole",
-        "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
+        "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole",
+        "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
       ]
     },
     {
@@ -212,7 +218,7 @@ if aws iam get-policy --policy-arn "$PROVISIONING_POLICY_ARN" &>/dev/null; then
       "Action": [
         "iam:GetRole"
       ],
-      "Resource": "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole"
+      "Resource": "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole"
     },
     {
       "Sid": "ManagePodIdentityAssociations",
@@ -254,7 +260,7 @@ else
         "iam:DetachRolePolicy",
         "iam:ListAttachedRolePolicies"
       ],
-      "Resource": "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
+      "Resource": "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
     },
     {
       "Sid": "PassRoleToServiceAccounts",
@@ -263,8 +269,8 @@ else
         "iam:PassRole"
       ],
       "Resource": [
-        "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole",
-        "arn:aws:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
+        "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole",
+        "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/openclaw-user-*"
       ]
     },
     {
@@ -273,7 +279,7 @@ else
       "Action": [
         "iam:GetRole"
       ],
-      "Resource": "arn:aws:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole"
+      "Resource": "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/OpenClawBedrockRole"
     },
     {
       "Sid": "ManagePodIdentityAssociations",
@@ -340,7 +346,7 @@ EOFTRUST
 fi
 
 # Create Pod Identity Association for provisioning service
-PROVISIONING_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${PROVISIONING_ROLE_NAME}"
+PROVISIONING_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/${PROVISIONING_ROLE_NAME}"
 
 EXISTING_PROV_ASSOC=$(aws eks list-pod-identity-associations \
   --cluster-name "$CLUSTER_NAME" \
@@ -371,7 +377,7 @@ echo ""
 
 echo -e "${BLUE}[3/9] Creating User Instance Pod Identity Association...${NC}"
 
-BEDROCK_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${BEDROCK_ROLE_NAME}"
+BEDROCK_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/${BEDROCK_ROLE_NAME}"
 
 EXISTING_ASSOC=$(aws eks list-pod-identity-associations \
   --cluster-name "$CLUSTER_NAME" \
