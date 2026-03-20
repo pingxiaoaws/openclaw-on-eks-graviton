@@ -42,7 +42,11 @@ export KARPENTER_VERSION="1.9.0"
 export CLUSTER_NAME=$(kubectl config current-context | cut -d'/' -f2)
 export AWS_DEFAULT_REGION=$(kubectl config current-context | cut -d':' -f4)
 export AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
-export AWS_PARTITION="aws"
+if [[ "$AWS_DEFAULT_REGION" == cn-* ]]; then
+  export AWS_PARTITION="aws-cn"
+else
+  export AWS_PARTITION="aws"
+fi
 export TEMPOUT=$(mktemp)
 
 print_info "CLUSTER_NAME: ${CLUSTER_NAME}"
@@ -93,8 +97,8 @@ if [ "$USE_CFN_KARPENTER" = true ]; then
   KARPENTER_NODE_ROLE_ARN="$CFN_KARPENTER_NODE_ROLE_ARN"
   KARPENTER_QUEUE_NAME="$CFN_KARPENTER_QUEUE_NAME"
 else
-  print_info "Downloading CloudFormation template..."
-  curl -fsSL "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml" > "${TEMPOUT}"
+  print_info "Copying local CloudFormation template..."
+  cp "${TEMPLATE_DIR}/karpenter-cloudformation.yaml" "${TEMPOUT}"
 
   if aws cloudformation describe-stacks --stack-name "Karpenter-${CLUSTER_NAME}" --region ${AWS_DEFAULT_REGION} &>/dev/null; then
       print_warning "CloudFormation stack already exists"
