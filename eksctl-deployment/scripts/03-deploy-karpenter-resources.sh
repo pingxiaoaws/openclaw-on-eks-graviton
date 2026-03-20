@@ -119,9 +119,8 @@ aws iam create-service-linked-role --aws-service-name spot.amazonaws.com 2>/dev/
 print_status "EC2 Spot service-linked role verified"
 
 if [ "$USE_CFN_KARPENTER" = false ]; then
-  # Create KarpenterControllerRole (for IRSA) - only when not using CFN
-  print_info "Creating KarpenterControllerRole for IRSA..."
-  OIDC_PROVIDER=$(aws eks describe-cluster --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --query "cluster.identity.oidc.issuer" --output text | sed -e "s/^https:\/\///")
+  # Create KarpenterControllerRole for Pod Identity - only when not using CFN
+  print_info "Creating KarpenterControllerRole for Pod Identity..."
 
   if aws iam get-role --role-name "KarpenterControllerRole-${CLUSTER_NAME}" &>/dev/null; then
       print_warning "KarpenterControllerRole already exists"
@@ -133,15 +132,12 @@ if [ "$USE_CFN_KARPENTER" = false ]; then
     {
       "Effect": "Allow",
       "Principal": {
-        "Federated": "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER}"
+        "Service": "pods.eks.amazonaws.com"
       },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "${OIDC_PROVIDER}:aud": "sts.amazonaws.com",
-          "${OIDC_PROVIDER}:sub": "system:serviceaccount:${KARPENTER_NAMESPACE}:karpenter"
-        }
-      }
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
     }
   ]
 }
@@ -208,28 +204,28 @@ export CLUSTER_ENDPOINT=$(aws eks describe-cluster --name ${CLUSTER_NAME} --regi
 print_info "Cluster endpoint: ${CLUSTER_ENDPOINT}"
 
 # Create Pod Identity Association BEFORE helm install (so pods can authenticate on startup)
-if [ "$USE_CFN_KARPENTER" = true ]; then
-  EXISTING_KARPENTER_ASSOC=$(aws eks list-pod-identity-associations \
+EXISTING_KARPENTER_ASSOC=$(aws eks list-pod-identity-associations \
+  --cluster-name "$CLUSTER_NAME" \
+  --region "$AWS_DEFAULT_REGION" \
+  --namespace "${KARPENTER_NAMESPACE}" \
+  --service-account karpenter \
+  --query 'associations[0].associationId' \
+  --output text 2>/dev/null || echo "")
+
+if [ -n "$EXISTING_KARPENTER_ASSOC" ] && [ "$EXISTING_KARPENTER_ASSOC" != "None" ]; then
+  print_warning "Karpenter Pod Identity association already exists: $EXISTING_KARPENTER_ASSOC"
+else
+  print_info "Creating Pod Identity association for Karpenter..."
+  aws eks create-pod-identity-association \
     --cluster-name "$CLUSTER_NAME" \
-    --region "$AWS_DEFAULT_REGION" \
     --namespace "${KARPENTER_NAMESPACE}" \
     --service-account karpenter \
-    --query 'associations[0].associationId' \
-    --output text 2>/dev/null || echo "")
-
-  if [ -n "$EXISTING_KARPENTER_ASSOC" ] && [ "$EXISTING_KARPENTER_ASSOC" != "None" ]; then
-    print_warning "Karpenter Pod Identity association already exists: $EXISTING_KARPENTER_ASSOC"
-  else
-    print_info "Creating Pod Identity association for Karpenter..."
-    aws eks create-pod-identity-association \
-      --cluster-name "$CLUSTER_NAME" \
-      --namespace "${KARPENTER_NAMESPACE}" \
-      --service-account karpenter \
-      --role-arn "$KARPENTER_CONTROLLER_ROLE_ARN" \
-      --region "$AWS_DEFAULT_REGION"
-    print_status "Karpenter Pod Identity association created"
-  fi
+    --role-arn "$KARPENTER_CONTROLLER_ROLE_ARN" \
+    --region "$AWS_DEFAULT_REGION"
+  print_status "Karpenter Pod Identity association created"
 fi
+
+sleep 5
 
 # Logout of helm registry to perform an unauthenticated pull
 helm registry logout public.ecr.aws 2>/dev/null || true
@@ -245,7 +241,7 @@ helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
   --set controller.resources.requests.memory=1Gi \
   --set controller.resources.limits.cpu=1 \
   --set controller.resources.limits.memory=1Gi \
-  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_CONTROLLER_ROLE_ARN}" \
+  --set serviceAccount.create=true \
   --wait --timeout 5m
 
 print_status "Karpenter installed successfully"
