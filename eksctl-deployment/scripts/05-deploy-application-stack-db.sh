@@ -57,7 +57,7 @@ else
     # China regions cannot access ghcr.io; use ECR mirror instead
     HELM_EXTRA_ARGS=""
     if [[ "$AWS_REGION" == cn-* ]]; then
-      HELM_EXTRA_ARGS="--set image.repository=public.ecr.aws/u6t0z4w2/openclaw --set image.tag=2026.3.14"
+      HELM_EXTRA_ARGS="--set image.repository=public.ecr.aws/u6t0z4w2/openclaw --set image.tag=2026.3.13-1"
     fi
 
     helm upgrade --install openclaw-operator charts/openclaw-operator \
@@ -480,6 +480,14 @@ kubectl create secret generic openclaw-provisioning-secret \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Deploying provisioning service..."
+# Set OpenClaw instance image for provisioning service
+if [[ "$AWS_REGION" == cn-* ]]; then
+  OPENCLAW_IMG_REPO="public.ecr.aws/u6t0z4w2/openclaw"
+  OPENCLAW_IMG_TAG="2026.3.13-1"
+else
+  OPENCLAW_IMG_REPO=""
+  OPENCLAW_IMG_TAG=""
+fi
 cat <<EOFDEPLOYMENT | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
@@ -519,6 +527,10 @@ spec:
           value: "${AWS_REGION}"
         - name: AWS_ACCOUNT_ID
           value: "${AWS_ACCOUNT}"
+        - name: OPENCLAW_IMAGE_REPOSITORY
+          value: "${OPENCLAW_IMG_REPO}"
+        - name: OPENCLAW_IMAGE_TAG
+          value: "${OPENCLAW_IMG_TAG}"
         # PostgreSQL Configuration
         - name: POSTGRES_HOST
           value: "postgres"

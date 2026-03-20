@@ -61,8 +61,8 @@ class Config:
         'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'),
         'aws_credentials_secret': os.environ.get('OPENCLAW_AWS_CREDENTIALS_SECRET', 'aws-credentials'),
         'image': {
-            'repository': os.environ.get('OPENCLAW_IMAGE_REPOSITORY', '970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw'),
-            'tag': os.environ.get('OPENCLAW_IMAGE_TAG', '2026.3.14'),
+            'repository': os.environ.get('OPENCLAW_IMAGE_REPOSITORY', 'ghcr.io/openclaw/openclaw'),
+            'tag': os.environ.get('OPENCLAW_IMAGE_TAG', 'latest'),
             'pullPolicy': os.environ.get('OPENCLAW_IMAGE_PULL_POLICY', 'IfNotPresent')
         }
     }

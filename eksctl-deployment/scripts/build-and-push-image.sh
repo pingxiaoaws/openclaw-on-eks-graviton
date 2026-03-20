@@ -77,6 +77,12 @@ else
     fi
     echo ""
 
+    # Ensure ECR repository exists
+    aws ecr describe-repositories --repository-names "$ECR_REPO" --region "$REGION" &>/dev/null || \
+      aws ecr create-repository --repository-name "$ECR_REPO" --region "$REGION" --query 'repository.repositoryUri' --output text
+    echo -e "${GREEN}✅ ECR repository ready${NC}"
+    echo ""
+
     # Step 3: Build Docker image
     echo -e "${YELLOW}Step 3/7: Building Docker image (ARM64)${NC}"
     cd "$REPO_DIR/eks-pod-service"

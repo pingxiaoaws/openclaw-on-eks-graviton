@@ -220,6 +220,15 @@ echo "  Model:    bedrock/$MODEL_ID"
 echo "  Auth:     AWS_BEARER_TOKEN_BEDROCK (from secret)"
 echo ""
 
+# Set image spec based on region (China needs ECR Public mirror, global uses chart default)
+if [[ "$AWS_REGION" == cn-* ]]; then
+  OPENCLAW_IMAGE_SPEC="
+    repository: public.ecr.aws/u6t0z4w2/openclaw
+    tag: \"2026.3.13-1\""
+else
+  OPENCLAW_IMAGE_SPEC=""
+fi
+
 cat <<EOFINSTANCE | kubectl apply -f -
 apiVersion: openclaw.rocks/v1alpha1
 kind: OpenClawInstance
@@ -229,9 +238,7 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: bedrock-apikey-setup
 spec:
-  image:
-    repository: public.ecr.aws/u6t0z4w2/openclaw
-    tag: "2026.3.14"
+  image:${OPENCLAW_IMAGE_SPEC}
     pullPolicy: IfNotPresent
   config:
     raw:
