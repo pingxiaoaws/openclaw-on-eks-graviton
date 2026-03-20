@@ -1344,10 +1344,10 @@ Resources:
     Properties:
       GroupDescription: Security group for OpenClaw IDE
       SecurityGroupIngress:
-        - Description: Allow HTTP from CloudFront
+        - Description: Allow code-server from CloudFront
           IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
+          FromPort: 8889
+          ToPort: 8889
           SourcePrefixListId: !FindInMap [PrefixListID, !Ref "AWS::Region", PrefixList]
       SecurityGroupEgress:
         - Description: Allow all outbound traffic
@@ -1652,35 +1652,7 @@ Resources:
                   PLATFORM=$(uname -s)_$ARCH
                   curl -fsSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz" | tar xz -C /usr/local/bin
 
-                  # Install Caddy (reverse proxy for code-server)
-                  curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=arm64" -o /usr/local/bin/caddy
-                  chmod +x /usr/local/bin/caddy
-                  useradd --system --home /var/lib/caddy --shell /usr/sbin/nologin caddy 2>/dev/null || true
-                  mkdir -p /etc/caddy /var/lib/caddy /var/log/caddy
-                  chown caddy:caddy /var/lib/caddy /var/log/caddy
-                  tee /etc/systemd/system/caddy.service <<CADDYSVC
-                  [Unit]
-                  Description=Caddy
-                  After=network.target
-                  [Service]
-                  User=caddy
-                  Group=caddy
-                  ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile
-                  ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile
-                  Restart=on-failure
-                  [Install]
-                  WantedBy=multi-user.target
-                  CADDYSVC
-                  systemctl daemon-reload
-                  systemctl enable --now caddy
-
-                  # Configure Caddy
-                  tee /etc/caddy/Caddyfile <<EOF
-                  http://${IdeCloudFrontDistribution.DomainName} {
-                    reverse_proxy 127.0.0.1:8889
-                  }
-                  EOF
-                  systemctl restart caddy
+                  # CloudFront connects directly to code-server on port 8889 (no reverse proxy needed)
 
                   # Custom prompt and environment variables
                   tee /etc/profile.d/openclaw_env.sh <<'EOF'
@@ -1960,6 +1932,7 @@ Resources:
           - DomainName: !GetAtt IdeInstance.PublicDnsName
             Id: !Sub 'IDE-${ClusterName}'
             CustomOriginConfig:
+              HTTPPort: 8889
               OriginProtocolPolicy: http-only
 
 # =============================================================================
@@ -1970,100 +1943,48 @@ Outputs:
   # Lab CFn Outputs
   ########################################
 
-  # --- EKS Outputs ---
+  # --- User-facing Outputs ---
+  IdeUrl:
+    Description: IDE URL (code-server)
+    Value: !Sub 'https://${IdeCloudFrontDistribution.DomainName}'
+
+  IdePasswordConsoleUrl:
+    Description: IDE password (click to view in Secrets Manager)
+    Value: !Sub 'https://console.aws.amazon.com/secretsmanager/secret?name=${ClusterName}-ide-password&region=${AWS::Region}'
+
   ClusterName:
     Description: EKS cluster name
     Value: !Ref ClusterName
 
-  ClusterEndpoint:
-    Description: EKS cluster API endpoint
-    Value: !GetAtt EKSCluster.Endpoint
-
-  ClusterOIDCIssuer:
-    Description: OIDC issuer URL for the cluster
-    Value: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
-
-  ClusterSecurityGroupId:
-    Description: Cluster security group ID (tagged for Karpenter)
-    Value: !Ref ClusterSecurityGroup
-
-  VpcId:
-    Description: VPC ID
-    Value: !Ref VPC
-
-  PrivateSubnetIds:
-    Description: Private subnet IDs (comma-separated)
-    Value: !Join
-      - ','
-      - - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-        - !Ref PrivateSubnet3
-
-  PublicSubnetIds:
-    Description: Public subnet IDs (comma-separated)
-    Value: !Join
-      - ','
-      - - !Ref PublicSubnet1
-        - !Ref PublicSubnet2
-        - !Ref PublicSubnet3
-
-  NodeGroupRoleArn:
-    Description: System node group IAM role ARN
-    Value: !GetAtt NodeGroupRole.Arn
-
+  # --- Script-consumed Outputs (queried by deploy scripts) ---
   EFSFileSystemId:
-    Description: EFS file system ID (use in efs-sc StorageClass)
+    Description: EFS file system ID
     Value: !Ref EFSFileSystem
 
   EFSCSIDriverRoleArn:
-    Description: EFS CSI Driver IAM role ARN (use for Pod Identity association)
+    Description: EFS CSI Driver IAM role ARN
     Value: !GetAtt EFSCSIDriverRole.Arn
 
   ALBControllerRoleArn:
-    Description: ALB Controller IAM role ARN (use in Helm serviceAccount annotation)
+    Description: ALB Controller IAM role ARN
     Value: !GetAtt ALBControllerRole.Arn
 
   KarpenterControllerRoleArn:
-    Description: Karpenter controller IAM role ARN (use in Helm serviceAccount annotation)
+    Description: Karpenter controller IAM role ARN
     Value: !GetAtt KarpenterControllerRole.Arn
 
   KarpenterNodeRoleArn:
-    Description: Karpenter node IAM role ARN (use in EC2NodeClass)
+    Description: Karpenter node IAM role ARN
     Value: !GetAtt KarpenterNodeRole.Arn
 
   KarpenterInterruptionQueueName:
-    Description: SQS queue name for Karpenter interruption handling
+    Description: SQS queue name for Karpenter
     Value: !GetAtt KarpenterInterruptionQueue.QueueName
 
-  # --- Identity Center Outputs ---
   IdentityCenterInstanceArn:
-    Description: IAM Identity Center instance ARN (required for EKS Capabilities ArgoCD)
+    Description: Identity Center instance ARN (for ArgoCD)
     Value: !GetAtt IdentityCenterInstance.InstanceArn
 
-  IdentityStoreId:
-    Description: Identity Store ID associated with the Identity Center instance
-    Value: !GetAtt IdentityCenterInstance.IdentityStoreId
-
-  # --- IDE Outputs ---
-  IdeUrl:
-    Description: IDE URL (code-server via CloudFront)
-    Value: !Sub 'https://${IdeCloudFrontDistribution.DomainName}'
-
-  IdePasswordConsoleUrl:
-    Description: AWS Console link to IDE password secret
-    Value: !Sub 'https://console.aws.amazon.com/secretsmanager/secret?name=${ClusterName}-ide-password&region=${AWS::Region}'
-
-  IdeRoleArn:
-    Description: IDE instance IAM role ARN (add to EKS aws-auth for kubectl access)
-    Value: !GetAtt IdeRole.Arn
-
-  PostDeployInstructions:
-    Description: Post-deploy steps
-    Value: !Sub |
-      1. aws eks update-kubeconfig --name ${ClusterName} --region ${AWS::Region}
-      2. Grant IDE access to cluster:
-         eksctl create iamidentitymapping --cluster ${ClusterName} --region ${AWS::Region} \
-           --arn <IdeRoleArn> --username admin --group system:masters
-      3. Install Helm charts: EFS CSI Driver, ALB Controller, Karpenter
-      4. Create StorageClasses (efs-sc, gp3)
-      5. Apply Karpenter NodePool + EC2NodeClass
+  ClusterSecurityGroupId:
+    Description: Cluster security group ID
+    Value: !Ref ClusterSecurityGroup
