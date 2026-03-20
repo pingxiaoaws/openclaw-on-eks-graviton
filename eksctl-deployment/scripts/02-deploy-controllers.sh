@@ -459,10 +459,16 @@ else
   helm repo update
 
   # Install ALB Controller
+  # When using CFN + Pod Identity, SA doesn't exist yet (eksctl create iamserviceaccount was skipped)
+  if [ "$USE_CFN" = true ]; then
+    SA_CREATE=true
+  else
+    SA_CREATE=false
+  fi
   helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
     --namespace kube-system \
     --set clusterName="$CLUSTER_NAME" \
-    --set serviceAccount.create=false \
+    --set serviceAccount.create="$SA_CREATE" \
     --set serviceAccount.name=aws-load-balancer-controller \
     --wait
 
