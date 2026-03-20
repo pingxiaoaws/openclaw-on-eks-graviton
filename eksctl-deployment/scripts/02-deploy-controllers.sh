@@ -25,8 +25,8 @@ echo ""
 # Get cluster info
 CLUSTER_CONTEXT=$(kubectl config current-context)
 # Extract cluster name and region (supports both ARN and eksctl formats)
-if [[ "$CLUSTER_CONTEXT" == arn:aws:eks:* ]]; then
-  # ARN format: arn:aws:eks:region:account:cluster/cluster-name
+if [[ "$CLUSTER_CONTEXT" == arn:aws*:eks:* ]]; then
+  # ARN format: arn:aws:eks:region:account:cluster/cluster-name (or arn:aws-cn:eks:...)
   AWS_REGION=$(echo "$CLUSTER_CONTEXT" | cut -d':' -f4)
   CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | cut -d'/' -f2)
 else
@@ -35,6 +35,14 @@ else
   AWS_REGION=$(echo "$CLUSTER_CONTEXT" | grep -oE 'us(-gov)?-(east|west|central)-(1|2)' | head -1)
 fi
 AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+
+# Detect AWS partition (aws vs aws-cn for China regions)
+if [[ "$AWS_REGION" == cn-* ]]; then
+  AWS_PARTITION="aws-cn"
+else
+  AWS_PARTITION="aws"
+fi
+export AWS_PARTITION
 
 echo "Cluster: $CLUSTER_NAME"
 echo "Region: $AWS_REGION"
@@ -125,7 +133,7 @@ if [ "$USE_CFN" = true ] && [ -n "$CFN_EFS_ROLE_ARN" ]; then
 else
   EFS_POLICY_NAME="AmazonEKS_EFS_CSI_Driver_Policy"
   EFS_ROLE_NAME="AmazonEKS_EFS_CSI_DriverRole"
-  EFS_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
+  EFS_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
 
   # Create IAM Policy for EFS CSI Driver
   if aws iam get-policy --policy-arn "$EFS_POLICY_ARN" &>/dev/null; then
@@ -216,7 +224,7 @@ EOFTRUST
     echo -e "${GREEN}✅ EFS CSI IAM role created${NC}"
   fi
 
-  EFS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
+  EFS_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
 fi
 
 echo ""
@@ -400,7 +408,7 @@ if [ "$USE_CFN" = true ] && [ -n "$CFN_ALB_ROLE_ARN" ]; then
   ALB_ROLE_ARN="$CFN_ALB_ROLE_ARN"
   echo -e "${GREEN}Using CFN pre-provisioned ALB Controller Role: $ALB_ROLE_ARN${NC}"
 else
-  ALB_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
+  ALB_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
 fi
 
 # Create Pod Identity association for ALB Controller BEFORE helm install
@@ -434,8 +442,12 @@ else
   if [ "$USE_CFN" = true ] && [ -n "$CFN_ALB_ROLE_ARN" ]; then
     echo -e "${GREEN}Skipping ALB IAM policy/role creation (provided by CFN)${NC}"
   else
-    # Download IAM policy
-    curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json
+    # Use local IAM policy (partition-aware: global vs China)
+    if [ "$AWS_PARTITION" = "aws-cn" ]; then
+      cp "${TEMPLATE_DIR}/iam-policies/alb-controller-policy-cn.json" /tmp/iam_policy.json
+    else
+      cp "${TEMPLATE_DIR}/iam-policies/alb-controller-policy.json" /tmp/iam_policy.json
+    fi
 
     # Create IAM policy
     aws iam create-policy \
@@ -445,7 +457,7 @@ else
 
     # Create IAM Role for ALB Controller (Pod Identity)
     ALB_ROLE_NAME="AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
-    ALB_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy"
+    ALB_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy"
 
     if aws iam get-role --role-name "$ALB_ROLE_NAME" &>/dev/null; then
       echo -e "${YELLOW}⚠️  ALB Controller Role already exists${NC}"
@@ -481,7 +493,7 @@ EOFTRUST
       echo -e "${GREEN}✅ ALB Controller IAM role created${NC}"
     fi
 
-    ALB_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${ALB_ROLE_NAME}"
+    ALB_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/${ALB_ROLE_NAME}"
   fi
 
   # Add Helm repo
