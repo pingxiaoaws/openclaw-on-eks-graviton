@@ -12,6 +12,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
+TEMPLATE_DIR="$(cd "${SCRIPT_DIR}/../templates"; pwd)"
+
 echo -e "${BLUE}=== OpenClaw Platform Deployment Verification ===${NC}"
 echo ""
 
@@ -236,24 +239,7 @@ echo -e "${BLUE}[7] Kata Pod Test${NC}"
 if [ "$KATA_NODES" -ge 1 ]; then
   echo "  Creating test Kata pod..."
 
-  cat <<EOF | kubectl apply -f - &>/dev/null
-apiVersion: v1
-kind: Pod
-metadata:
-  name: kata-test-verify
-  namespace: default
-spec:
-  runtimeClassName: kata-fc
-  containers:
-  - name: test
-    image: busybox:latest
-    command: ["sh", "-c", "uname -r && sleep 30"]
-  restartPolicy: Never
-  tolerations:
-  - key: kata-dedicated
-    operator: Exists
-    effect: NoSchedule
-EOF
+  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-test-pod.yaml" &>/dev/null
 
   # Wait for pod
   sleep 10

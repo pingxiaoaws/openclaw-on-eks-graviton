@@ -16,6 +16,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
+TEMPLATE_DIR="$(cd "${SCRIPT_DIR}/../templates"; pwd)"
+
 echo -e "${BLUE}=== Phase 2: Controllers and Operators Deployment ===${NC}"
 echo ""
 
@@ -328,42 +331,14 @@ fi
 
 # Create StorageClass
 echo "Creating EFS StorageClass..."
-cat <<EOF | kubectl apply -f -
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: efs-sc
-provisioner: efs.csi.aws.com
-parameters:
-  provisioningMode: efs-ap
-  fileSystemId: ${EFS_ID}
-  directoryPerms: "700"
-  basePath: /openclaw
-  uid: "1000"
-  gid: "1000"
-mountOptions:
-  - tls
-volumeBindingMode: WaitForFirstConsumer
-reclaimPolicy: Delete
-EOF
+export EFS_ID
+envsubst < "${TEMPLATE_DIR}/k8s-manifests/efs-storageclass.yaml.tpl" | kubectl apply -f -
 
 echo -e "${GREEN}✅ EFS StorageClass created${NC}"
 
 # Create gp3 StorageClass for EBS volumes (higher performance than gp2)
 echo "Creating gp3 StorageClass..."
-cat <<EOF | kubectl apply -f -
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: gp3
-provisioner: ebs.csi.aws.com
-parameters:
-  type: gp3
-  encrypted: "true"
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-reclaimPolicy: Delete
-EOF
+kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/gp3-storageclass.yaml"
 
 echo -e "${GREEN}✅ gp3 StorageClass created${NC}"
 echo ""
@@ -472,112 +447,12 @@ else
   # Step 7.1: Install Kata RBAC with CRD permissions
   echo ""
   echo "Installing Kata RBAC..."
-  cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: kata-deploy-sa
-  namespace: kube-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kata-deploy-role
-rules:
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["get", "list", "patch"]
-- apiGroups: ["apiextensions.k8s.io"]
-  resources: ["customresourcedefinitions"]
-  verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kata-deploy-rb
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kata-deploy-role
-subjects:
-- kind: ServiceAccount
-  name: kata-deploy-sa
-  namespace: kube-system
-EOF
+  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-rbac.yaml"
 
   # Step 7.2: Deploy Kata DaemonSet (fixed version)
   echo ""
   echo "Deploying Kata DaemonSet..."
-  cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: kata-deploy
-  namespace: kube-system
-spec:
-  selector:
-    matchLabels:
-      name: kata-deploy
-  template:
-    metadata:
-      labels:
-        name: kata-deploy
-    spec:
-      serviceAccountName: kata-deploy-sa
-      hostPID: true
-      tolerations:
-      - key: kata-dedicated
-        operator: Exists
-        effect: NoSchedule
-      containers:
-      - name: kube-kata
-        image: quay.io/kata-containers/kata-deploy:3.27.0
-        imagePullPolicy: Always
-        securityContext:
-          privileged: true
-        command:
-        - /usr/bin/kata-deploy
-        - install
-        env:
-        - name: NODE_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: spec.nodeName
-        - name: DEBUG
-          value: "false"
-        - name: SHIMS_AARCH64
-          value: "fc"
-        - name: DEFAULT_SHIM_AARCH64
-          value: "fc"
-        - name: SNAPSHOTTER_HANDLER_MAPPING_AARCH64
-          value: "fc:devmapper"
-        - name: INSTALLATION_PREFIX
-          value: ""
-        volumeMounts:
-        - name: crio-conf
-          mountPath: /etc/crio/
-        - name: containerd-conf
-          mountPath: /etc/containerd/
-        - name: host
-          mountPath: /host/
-        lifecycle:
-          preStop:
-            exec:
-              command:
-              - /usr/bin/kata-deploy
-              - cleanup
-      terminationGracePeriodSeconds: 120
-      volumes:
-      - name: crio-conf
-        hostPath:
-          path: /etc/crio/
-      - name: containerd-conf
-        hostPath:
-          path: /etc/containerd/
-      - name: host
-        hostPath:
-          path: /
-EOF
+  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-daemonset.yaml"
 
   # Step 7.3: Wait for Kata pods to be ready
   echo ""
@@ -605,42 +480,7 @@ echo -e "${BLUE}[8/8] Creating Kata RuntimeClasses...${NC}"
 if [ "$KATA_NODE_COUNT" -gt 0 ]; then
   # Create Kata RuntimeClasses
   echo "Creating Kata RuntimeClasses..."
-  cat <<EOF | kubectl apply -f -
----
-# Kata Firecracker RuntimeClass
-apiVersion: node.k8s.io/v1
-kind: RuntimeClass
-metadata:
-  name: kata-fc
-  labels:
-    kata-deploy/instance: default
-handler: kata-fc
-overhead:
-  podFixed:
-    cpu: 250m
-    memory: 130Mi
-scheduling:
-  nodeSelector:
-    katacontainers.io/kata-runtime: "true"
-  tolerations:
-    - key: kata-dedicated
-      operator: Exists
-      effect: NoSchedule
----
-# Kata QEMU RuntimeClass
-apiVersion: node.k8s.io/v1
-kind: RuntimeClass
-metadata:
-  name: kata-qemu
-handler: kata-qemu
-scheduling:
-  nodeSelector:
-    workload-type: kata
-  tolerations:
-    - key: kata-dedicated
-      operator: Exists
-      effect: NoSchedule
-EOF
+  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-runtimeclasses.yaml"
 
   echo ""
   echo "Available RuntimeClasses:"

@@ -11,6 +11,7 @@ NC='\033[0m' # No Color
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="${SCRIPT_DIR}/../configs"
+TEMPLATE_DIR="$(cd "${SCRIPT_DIR}/../templates"; pwd)"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Karpenter Installation${NC}"
@@ -298,32 +299,7 @@ echo -e "${BLUE}  Creating Test Workload${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-karpenter-standard
-  namespace: default
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: test-karpenter-standard
-  template:
-    metadata:
-      labels:
-        app: test-karpenter-standard
-    spec:
-      nodeSelector:
-        workload-type: standard
-      containers:
-      - name: pause
-        image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
-        resources:
-          requests:
-            cpu: 1000m
-            memory: 2Gi
-EOF
+kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/test-karpenter-deployment.yaml"
 
 print_status "Test deployment created (2 replicas, 1 CPU + 2Gi each)"
 echo ""

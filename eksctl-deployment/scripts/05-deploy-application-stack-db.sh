@@ -18,6 +18,9 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
+TEMPLATE_DIR="$(cd "${SCRIPT_DIR}/../templates"; pwd)"
+
 echo -e "${BLUE}=== Phase 3: Complete Application Stack Deployment ===${NC}"
 echo ""
 
@@ -488,89 +491,8 @@ else
   OPENCLAW_IMG_REPO=""
   OPENCLAW_IMG_TAG=""
 fi
-cat <<EOFDEPLOYMENT | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: openclaw-provisioning
-  namespace: openclaw-provisioning
-  labels:
-    app: openclaw-provisioning
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: openclaw-provisioning
-  template:
-    metadata:
-      labels:
-        app: openclaw-provisioning
-    spec:
-      serviceAccountName: openclaw-provisioner
-      containers:
-      - name: provisioning
-        image: ${PROVISIONING_IMAGE}
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8080
-          name: http
-        env:
-        - name: LOG_LEVEL
-          value: "INFO"
-        - name: USE_POD_IDENTITY
-          value: "true"
-        - name: SHARED_BEDROCK_ROLE_ARN
-          value: "${BEDROCK_ROLE_ARN}"
-        - name: EKS_CLUSTER_NAME
-          value: "${CLUSTER_NAME}"
-        - name: AWS_REGION
-          value: "${AWS_REGION}"
-        - name: AWS_ACCOUNT_ID
-          value: "${AWS_ACCOUNT}"
-        - name: OPENCLAW_IMAGE_REPOSITORY
-          value: "${OPENCLAW_IMG_REPO}"
-        - name: OPENCLAW_IMAGE_TAG
-          value: "${OPENCLAW_IMG_TAG}"
-        # PostgreSQL Configuration
-        - name: POSTGRES_HOST
-          value: "postgres"
-        - name: POSTGRES_PORT
-          value: "5432"
-        - name: POSTGRES_DB
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_DB
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_USER
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: POSTGRES_PASSWORD
-        resources:
-          requests:
-            cpu: 250m
-            memory: 1Gi
-          limits:
-            cpu: 1000m
-            memory: 2Gi
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 5
-EOFDEPLOYMENT
+export PROVISIONING_IMAGE BEDROCK_ROLE_ARN CLUSTER_NAME AWS_REGION AWS_ACCOUNT OPENCLAW_IMG_REPO OPENCLAW_IMG_TAG
+envsubst < "${TEMPLATE_DIR}/k8s-manifests/provisioning-deployment-db.yaml.tpl" | kubectl apply -f -
 
 kubectl apply -f "$PROVISIONING_DIR/kubernetes/service.yaml"
 
@@ -672,149 +594,8 @@ kubectl delete ingress openclaw-provisioning-ingress -n openclaw-provisioning --
 
 echo "Creating provisioning service Ingress (shared ALB group: $SHARED_ALB_GROUP)..."
 # Use specific paths to avoid catch-all conflict with OpenClaw instance /instance/{user_id} routes
-cat <<EOFPUBLIC | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: openclaw-provisioning-public
-  namespace: openclaw-provisioning
-  annotations:
-    alb.ingress.kubernetes.io/group.name: ${SHARED_ALB_GROUP}
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/subnets: ${PUBLIC_SUBNETS}
-    alb.ingress.kubernetes.io/security-groups: ${CLOUDFRONT_SG_ID}
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /health
-    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/success-codes: "200"
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-    alb.ingress.kubernetes.io/target-group-attributes: >-
-      stickiness.enabled=true,
-      stickiness.type=lb_cookie,
-      stickiness.lb_cookie.duration_seconds=3600,
-      deregistration_delay.timeout_seconds=60,
-      load_balancing.algorithm.type=least_outstanding_requests
-  labels:
-    app: openclaw-provisioning
-    managed-by: deployment-script
-spec:
-  ingressClassName: alb
-  rules:
-  - http:
-      paths:
-      - path: /login
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /logout
-        pathType: Exact
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /me
-        pathType: Exact
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /dashboard
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /static
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /provision
-        pathType: Exact
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /status
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /delete
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /api
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /health
-        pathType: Exact
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /register
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /billing
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /admin
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /devices
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /instance
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-      - path: /
-        pathType: Exact
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-EOFPUBLIC
+export SHARED_ALB_GROUP PUBLIC_SUBNETS CLOUDFRONT_SG_ID
+envsubst < "${TEMPLATE_DIR}/k8s-manifests/provisioning-public-ingress-db.yaml.tpl" | kubectl apply -f -
 
 echo "Waiting for shared ALB to provision (up to 3 minutes)..."
 for i in $(seq 1 18); do

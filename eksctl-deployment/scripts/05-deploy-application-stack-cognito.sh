@@ -19,6 +19,9 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
+TEMPLATE_DIR="$(cd "${SCRIPT_DIR}/../templates"; pwd)"
+
 echo -e "${BLUE}=== Phase 3: Complete Application Stack Deployment ===${NC}"
 echo ""
 
@@ -277,104 +280,14 @@ kubectl create secret generic openclaw-provisioning-secret \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Deploying provisioning service with Cognito configuration..."
-cat <<EOFDEPLOYMENT | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: openclaw-provisioning
-  namespace: openclaw-provisioning
-  labels:
-    app: openclaw-provisioning
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: openclaw-provisioning
-  template:
-    metadata:
-      labels:
-        app: openclaw-provisioning
-    spec:
-      serviceAccountName: openclaw-provisioner
-      containers:
-      - name: provisioning
-        image: ${PROVISIONING_IMAGE:-public.ecr.aws/u6t0z4w2/openclaw-provisioning:latest}
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8080
-          name: http
-        env:
-        - name: LOG_LEVEL
-          value: "INFO"
-        - name: USE_POD_IDENTITY
-          value: "true"
-        - name: SHARED_BEDROCK_ROLE_ARN
-          value: "${BEDROCK_ROLE_ARN}"
-        - name: EKS_CLUSTER_NAME
-          value: "${CLUSTER_NAME}"
-        - name: AWS_REGION
-          value: "${AWS_REGION}"
-        - name: AWS_ACCOUNT_ID
-          value: "${AWS_ACCOUNT}"
-        - name: COGNITO_REGION
-          value: "${AWS_REGION}"
-        - name: COGNITO_USER_POOL_ID
-          value: "${USER_POOL_ID}"
-        - name: COGNITO_CLIENT_ID
-          value: "${USER_POOL_CLIENT_ID}"
-        resources:
-          requests:
-            cpu: 250m
-            memory: 512Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 5
-EOFDEPLOYMENT
+export PROVISIONING_IMAGE BEDROCK_ROLE_ARN CLUSTER_NAME AWS_REGION AWS_ACCOUNT USER_POOL_ID USER_POOL_CLIENT_ID
+envsubst < "${TEMPLATE_DIR}/k8s-manifests/provisioning-deployment-cognito.yaml.tpl" | kubectl apply -f -
 
 kubectl apply -f "$PROVISIONING_DIR/kubernetes/service.yaml"
 
 # Deploy initial internal ALB (will be converted to internet-facing later)
 echo "Deploying initial internal ALB..."
-cat <<EOFINGRESS | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: openclaw-provisioning-ingress
-  namespace: openclaw-provisioning
-  annotations:
-    alb.ingress.kubernetes.io/scheme: internal
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /health
-    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/success-codes: "200"
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-  labels:
-    app: openclaw-provisioning
-spec:
-  ingressClassName: alb
-  rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-EOFINGRESS
+kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/provisioning-internal-ingress.yaml"
 
 echo "Waiting for provisioning service to be ready..."
 kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning --timeout=300s
@@ -454,36 +367,8 @@ kubectl delete ingress openclaw-provisioning-ingress -n openclaw-provisioning --
 sleep 30
 
 echo "Creating internet-facing ALB..."
-cat <<EOFPUBLIC | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: openclaw-provisioning-ingress
-  namespace: openclaw-provisioning
-  annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/subnets: ${PUBLIC_SUBNETS}
-    alb.ingress.kubernetes.io/security-groups: ${CLOUDFRONT_SG_ID},${ALB_MANAGED_SG}
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /health
-    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/success-codes: "200"
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-  labels:
-    app: openclaw-provisioning
-spec:
-  ingressClassName: alb
-  rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: openclaw-provisioning
-            port:
-              number: 80
-EOFPUBLIC
+export PUBLIC_SUBNETS CLOUDFRONT_SG_ID ALB_MANAGED_SG
+envsubst < "${TEMPLATE_DIR}/k8s-manifests/provisioning-public-ingress-cognito.yaml.tpl" | kubectl apply -f -
 
 sleep 90
 

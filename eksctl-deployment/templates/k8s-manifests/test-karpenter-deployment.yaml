@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-karpenter-standard
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: test-karpenter-standard
+  template:
+    metadata:
+      labels:
+        app: test-karpenter-standard
+    spec:
+      nodeSelector:
+        workload-type: standard
+      containers:
+      - name: pause
+        image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
