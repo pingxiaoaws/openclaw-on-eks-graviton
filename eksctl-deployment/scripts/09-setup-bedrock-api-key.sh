@@ -229,7 +229,7 @@ metadata:
     app.kubernetes.io/managed-by: bedrock-apikey-setup
 spec:
   image:
-    repository: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw
+    repository: public.ecr.aws/u6t0z4w2/openclaw
     tag: "2026.3.14"
     pullPolicy: IfNotPresent
   config:
