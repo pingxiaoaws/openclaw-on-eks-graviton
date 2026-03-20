@@ -1549,6 +1549,13 @@ Resources:
               - bedrock:ListFoundationModels
               - bedrock:GetFoundationModel
             Resource: "*"
+          - Sid: BedrockMarketplace
+            Effect: Allow
+            Action:
+              - aws-marketplace:Subscribe
+              - aws-marketplace:Unsubscribe
+              - aws-marketplace:ViewSubscriptions
+            Resource: "*"
           - Sid: S3ForHelm
             Effect: Allow
             Action:
