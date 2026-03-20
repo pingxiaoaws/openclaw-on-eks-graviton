@@ -48,8 +48,8 @@ echo -e "${BLUE}[1] Cluster Access${NC}"
 if kubectl cluster-info &>/dev/null; then
   CONTEXT=$(kubectl config current-context)
   # Extract cluster name from ARN format or eksctl format
-  if [[ "$CONTEXT" == arn:aws:eks:* ]]; then
-    # ARN format: arn:aws:eks:region:account:cluster/cluster-name
+  if [[ "$CONTEXT" == arn:aws*:eks:* ]]; then
+    # ARN format: arn:aws:eks: (or arn:aws-cn:eks:)region:account:cluster/cluster-name
     CLUSTER_NAME=$(echo "$CONTEXT" | cut -d'/' -f2)
   else
     # eksctl format: user@cluster-name.region.eksctl.io
@@ -105,8 +105,8 @@ echo -e "${BLUE}[3] EKS Add-ons${NC}"
 
 # Extract cluster name and region from context (supports ARN and eksctl formats)
 CONTEXT=$(kubectl config current-context)
-if [[ "$CONTEXT" == arn:aws:eks:* ]]; then
-  # ARN format: arn:aws:eks:region:account:cluster/cluster-name
+if [[ "$CONTEXT" == arn:aws*:eks:* ]]; then
+  # ARN format: arn:aws:eks: (or arn:aws-cn:eks:)region:account:cluster/cluster-name
   AWS_REGION=$(echo "$CONTEXT" | cut -d':' -f4)
   CLUSTER_NAME=$(echo "$CONTEXT" | cut -d'/' -f2)
 else
