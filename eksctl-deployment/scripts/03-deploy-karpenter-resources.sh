@@ -248,6 +248,11 @@ if [ "$USE_CFN_KARPENTER" = true ]; then
       --region "$AWS_DEFAULT_REGION"
 
     print_status "Karpenter Pod Identity association created"
+
+    # Restart Karpenter so it picks up the new Pod Identity credentials
+    print_info "Restarting Karpenter to pick up new credentials..."
+    kubectl rollout restart deployment karpenter -n "${KARPENTER_NAMESPACE}"
+    kubectl rollout status deployment karpenter -n "${KARPENTER_NAMESPACE}" --timeout=60s
   fi
 fi
 

@@ -53,10 +53,17 @@ else
   cd "$OPERATOR_DIR"
 
   if [ -d "charts/openclaw-operator" ]; then
+    # China regions cannot access ghcr.io; use ECR mirror instead
+    HELM_EXTRA_ARGS=""
+    if [[ "$AWS_REGION" == cn-* ]]; then
+      HELM_EXTRA_ARGS="--set image.repository=970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw --set image.tag=2026.3.14"
+    fi
+
     helm upgrade --install openclaw-operator charts/openclaw-operator \
       --namespace openclaw-operator-system \
       --create-namespace \
-      --wait
+      --wait \
+      $HELM_EXTRA_ARGS
     echo -e "${GREEN}✅ OpenClaw Operator installed${NC}"
   else
     echo "Using kustomize deployment..."
