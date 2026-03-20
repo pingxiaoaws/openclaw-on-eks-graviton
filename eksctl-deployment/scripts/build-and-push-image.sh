@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 #
 # Build, Push, Deploy OpenClaw Provisioning Service
 # One-command deployment script for code changes

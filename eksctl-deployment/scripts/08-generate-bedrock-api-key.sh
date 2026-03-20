@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # Generate Bedrock API Key using IAM Service-Specific Credentials
 #
 # Creates an IAM user with Bedrock access and generates a long-term API key.

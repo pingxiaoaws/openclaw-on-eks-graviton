@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # 11-patch-bedrock-apikey.sh
 #
 # Patch an existing OpenClaw instance to use Bedrock API Key authentication.

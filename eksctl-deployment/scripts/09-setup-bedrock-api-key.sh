@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # 09-setup-bedrock-api-key.sh
 #
 # Setup Bedrock API Key authentication for OpenClaw instances.

@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # Phase 2: Deploy Kubernetes Controllers and Operators
 # - EFS CSI Driver
 # - AWS Load Balancer Controller
