@@ -248,6 +248,7 @@ if [ -f "$BUILD_SCRIPT" ]; then
   export AWS_REGION
   export AWS_ACCOUNT
   "$BUILD_SCRIPT"
+  PROVISIONING_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest"
 else
   echo -e "${RED}❌ Build script not found: $BUILD_SCRIPT${NC}"
   exit 1
@@ -296,7 +297,7 @@ spec:
       serviceAccountName: openclaw-provisioner
       containers:
       - name: provisioning
-        image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest
+        image: ${PROVISIONING_IMAGE:-public.ecr.aws/u6t0z4w2/openclaw-provisioning:latest}
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -626,7 +627,7 @@ echo "  ✅ Bedrock IAM Role: $BEDROCK_ROLE_ARN"
 echo "  ✅ Pod Identity Association"
 echo "  ✅ Cognito User Pool: $USER_POOL_ID"
 echo "  ✅ Cognito Client: $USER_POOL_CLIENT_ID"
-echo "  ✅ Docker Image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest"
+echo "  ✅ Docker Image: ${PROVISIONING_IMAGE:-public.ecr.aws/u6t0z4w2/openclaw-provisioning:latest}"
 echo "  ✅ Provisioning Service: openclaw-provisioning (2 replicas)"
 echo "  ✅ Internet-facing ALB: $ALB_DNS"
 echo "  ✅ CloudFront Distribution: $CLOUDFRONT_DIST_ID"

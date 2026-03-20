@@ -56,7 +56,7 @@ else
     # China regions cannot access ghcr.io; use ECR mirror instead
     HELM_EXTRA_ARGS=""
     if [[ "$AWS_REGION" == cn-* ]]; then
-      HELM_EXTRA_ARGS="--set image.repository=970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw --set image.tag=2026.3.14"
+      HELM_EXTRA_ARGS="--set image.repository=public.ecr.aws/u6t0z4w2/openclaw --set image.tag=2026.3.14"
     fi
 
     helm upgrade --install openclaw-operator charts/openclaw-operator \
@@ -427,6 +427,7 @@ if [[ "$BUILD_IMAGE" =~ ^[Yy](es)?$ ]]; then
     export AWS_REGION
     export AWS_ACCOUNT
     "$BUILD_SCRIPT"
+    PROVISIONING_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest"
     echo -e "${GREEN}✅ Docker image built and pushed${NC}"
   else
     echo -e "${RED}❌ Build script not found: $BUILD_SCRIPT${NC}"
@@ -434,7 +435,8 @@ if [[ "$BUILD_IMAGE" =~ ^[Yy](es)?$ ]]; then
   fi
 else
   echo -e "${YELLOW}⚠️  Skipping Docker image build${NC}"
-  echo "Using existing image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest"
+  PROVISIONING_IMAGE="public.ecr.aws/u6t0z4w2/openclaw-provisioning-chinaregion:latest"
+  echo "Using existing image: ${PROVISIONING_IMAGE}"
 fi
 
 echo ""
@@ -498,7 +500,7 @@ spec:
       serviceAccountName: openclaw-provisioner
       containers:
       - name: provisioning
-        image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest
+        image: ${PROVISIONING_IMAGE}
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -1003,7 +1005,7 @@ echo "  ✅ Bedrock IAM Policy: $BEDROCK_POLICY_ARN"
 echo "  ✅ Bedrock IAM Role: $BEDROCK_ROLE_ARN"
 echo "  ✅ Pod Identity Association"
 echo "  ✅ PostgreSQL Database: postgres (StatefulSet with gp3 PVC)"
-echo "  ✅ Docker Image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest"
+echo "  ✅ Docker Image: ${PROVISIONING_IMAGE}"
 echo "  ✅ Provisioning Service: openclaw-provisioning (2 replicas)"
 echo "  ✅ Shared Internet-facing ALB: $ALB_DNS (group: $SHARED_ALB_GROUP)"
 echo "  ✅ CloudFront Distribution: $CLOUDFRONT_DIST_ID"
