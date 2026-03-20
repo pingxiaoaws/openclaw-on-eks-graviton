@@ -1,6 +1,6 @@
 #!/bin/bash
-export AWS_PAGER=""
 # Phase 2: Deploy Kubernetes Controllers and Operators
+# - EKS Pod Identity Agent (MUST be first)
 # - EFS CSI Driver
 # - AWS Load Balancer Controller
 # - Karpenter
@@ -31,61 +31,67 @@ else
   CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | rev | cut -d'/' -f1 | rev)
   AWS_REGION=$(echo "$CLUSTER_CONTEXT" | grep -oE 'us(-gov)?-(east|west|central)-(1|2)' | head -1)
 fi
-AWS_ACCOUNT=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
+AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 
 echo "Cluster: $CLUSTER_NAME"
 echo "Region: $AWS_REGION"
 echo "Account: $AWS_ACCOUNT"
 echo ""
 
-# CFN stack name (set via env var or default)
-CFN_STACK_NAME="${CFN_STACK_NAME:-cloudlab-template-global}"
+# ============================================================================
+# Step 1: Install EKS Pod Identity Agent (MUST be first - required by all
+#          Pod Identity associations that follow)
+# ============================================================================
 
-# Get CloudFormation stack output value (returns empty string if stack/key not found)
-get_cfn_output() {
-    local stack_name="$1"
-    local output_key="$2"
-    aws cloudformation describe-stacks \
-        --stack-name "$stack_name" \
-        --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue" \
-        --output text 2>/dev/null || echo ""
-}
+echo -e "${BLUE}[1/8] Installing EKS Pod Identity Agent...${NC}"
 
-# Query CFN outputs for EFS and ALB (empty if no stack)
-CFN_EFS_CSI_ROLE_ARN=$(get_cfn_output "$CFN_STACK_NAME" "EFSCSIDriverRoleArn")
-CFN_ALB_ROLE_ARN=$(get_cfn_output "$CFN_STACK_NAME" "ALBControllerRoleArn")
-CFN_EFS_ID=$(get_cfn_output "$CFN_STACK_NAME" "EFSFileSystemId")
+# Check if Pod Identity addon exists
+POD_IDENTITY_STATUS=$(aws eks describe-addon \
+  --cluster-name "$CLUSTER_NAME" \
+  --addon-name eks-pod-identity-agent \
+  --region "$AWS_REGION" \
+  --query 'addon.status' \
+  --output text 2>/dev/null || echo "NOT_INSTALLED")
 
-if [ -n "$CFN_EFS_CSI_ROLE_ARN" ] && [ "$CFN_EFS_CSI_ROLE_ARN" != "None" ]; then
-  echo -e "${GREEN}Found CFN stack '$CFN_STACK_NAME' — using pre-provisioned IAM resources${NC}"
+if [ "$POD_IDENTITY_STATUS" == "ACTIVE" ]; then
+  echo -e "${YELLOW}⚠️  Pod Identity addon already installed${NC}"
 else
-  echo "No CFN stack outputs found — will create IAM resources from scratch"
-  CFN_EFS_CSI_ROLE_ARN=""
-  CFN_ALB_ROLE_ARN=""
-  CFN_EFS_ID=""
+  echo "Installing Pod Identity addon..."
+  aws eks create-addon \
+    --cluster-name "$CLUSTER_NAME" \
+    --addon-name eks-pod-identity-agent \
+    --addon-version v1.3.10-eksbuild.2 \
+    --resolve-conflicts OVERWRITE \
+    --region "$AWS_REGION"
+
+  # Wait for addon to be active
+  echo "Waiting for Pod Identity addon to be active..."
+  aws eks wait addon-active \
+    --cluster-name "$CLUSTER_NAME" \
+    --addon-name eks-pod-identity-agent \
+    --region "$AWS_REGION"
+
+  echo -e "${GREEN}✅ Pod Identity addon installed${NC}"
 fi
+
 echo ""
 
 # ============================================================================
-# Step 1: Create EFS CSI Driver IAM Role for Pod Identity
+# Step 2: Create EFS CSI Driver IAM Role for Pod Identity
 # ============================================================================
 
-echo -e "${BLUE}[1/8] Creating EFS CSI Driver IAM Role (Pod Identity)...${NC}"
+echo -e "${BLUE}[2/8] Creating EFS CSI Driver IAM Role (Pod Identity)...${NC}"
 
-if [ -n "$CFN_EFS_CSI_ROLE_ARN" ]; then
-  echo -e "${GREEN}Using CFN-provisioned EFS CSI role: $CFN_EFS_CSI_ROLE_ARN${NC}"
-  EFS_ROLE_ARN="$CFN_EFS_CSI_ROLE_ARN"
+EFS_POLICY_NAME="AmazonEKS_EFS_CSI_Driver_Policy"
+EFS_ROLE_NAME="AmazonEKS_EFS_CSI_DriverRole"
+EFS_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
+
+# Create IAM Policy for EFS CSI Driver
+if aws iam get-policy --policy-arn "$EFS_POLICY_ARN" &>/dev/null; then
+  echo -e "${YELLOW}⚠️  EFS CSI Policy already exists${NC}"
 else
-  EFS_POLICY_NAME="AmazonEKS_EFS_CSI_Driver_Policy"
-  EFS_ROLE_NAME="AmazonEKS_EFS_CSI_DriverRole"
-  EFS_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
-
-  # Create IAM Policy for EFS CSI Driver
-  if aws iam get-policy --policy-arn "$EFS_POLICY_ARN" &>/dev/null; then
-    echo -e "${YELLOW}⚠️  EFS CSI Policy already exists${NC}"
-  else
-    echo "Creating EFS CSI IAM policy..."
-    cat > /tmp/efs-csi-policy.json <<EOFPOLICY
+  echo "Creating EFS CSI IAM policy..."
+  cat > /tmp/efs-csi-policy.json <<EOFPOLICY
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -126,20 +132,20 @@ else
 }
 EOFPOLICY
 
-    aws iam create-policy \
-      --policy-name "$EFS_POLICY_NAME" \
-      --policy-document file:///tmp/efs-csi-policy.json \
-      --description "Policy for EFS CSI Driver"
+  aws iam create-policy \
+    --policy-name "$EFS_POLICY_NAME" \
+    --policy-document file:///tmp/efs-csi-policy.json \
+    --description "Policy for EFS CSI Driver"
 
-    echo -e "${GREEN}✅ EFS CSI IAM policy created${NC}"
-  fi
+  echo -e "${GREEN}✅ EFS CSI IAM policy created${NC}"
+fi
 
-  # Create IAM Role for EFS CSI Driver (Pod Identity)
-  if aws iam get-role --role-name "$EFS_ROLE_NAME" &>/dev/null; then
-    echo -e "${YELLOW}⚠️  EFS CSI Role already exists${NC}"
-  else
-    echo "Creating EFS CSI IAM role with Pod Identity trust policy..."
-    cat > /tmp/efs-csi-trust-policy.json <<EOFTRUST
+# Create IAM Role for EFS CSI Driver (Pod Identity)
+if aws iam get-role --role-name "$EFS_ROLE_NAME" &>/dev/null; then
+  echo -e "${YELLOW}⚠️  EFS CSI Role already exists${NC}"
+else
+  echo "Creating EFS CSI IAM role with Pod Identity trust policy..."
+  cat > /tmp/efs-csi-trust-policy.json <<EOFTRUST
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -157,30 +163,54 @@ EOFPOLICY
 }
 EOFTRUST
 
-    aws iam create-role \
-      --role-name "$EFS_ROLE_NAME" \
-      --assume-role-policy-document file:///tmp/efs-csi-trust-policy.json \
-      --description "IAM role for EFS CSI Driver via Pod Identity"
+  aws iam create-role \
+    --role-name "$EFS_ROLE_NAME" \
+    --assume-role-policy-document file:///tmp/efs-csi-trust-policy.json \
+    --description "IAM role for EFS CSI Driver via Pod Identity"
 
-    aws iam attach-role-policy \
-      --role-name "$EFS_ROLE_NAME" \
-      --policy-arn "$EFS_POLICY_ARN"
+  aws iam attach-role-policy \
+    --role-name "$EFS_ROLE_NAME" \
+    --policy-arn "$EFS_POLICY_ARN"
 
-    echo -e "${GREEN}✅ EFS CSI IAM role created${NC}"
-  fi
-
-  EFS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
+  echo -e "${GREEN}✅ EFS CSI IAM role created${NC}"
 fi
 
 echo ""
 
 # ============================================================================
-# Step 2: Install EFS CSI Driver
+# Step 3: Install EFS CSI Driver (Pod Identity association THEN Helm install)
 # ============================================================================
 
-echo -e "${BLUE}[2/8] Installing EFS CSI Driver...${NC}"
+echo -e "${BLUE}[3/8] Installing EFS CSI Driver...${NC}"
 
-# Check if already installed
+# Create Pod Identity Association BEFORE helm install so pods pick up credentials
+EFS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
+
+EXISTING_EFS_ASSOC=$(aws eks list-pod-identity-associations \
+  --cluster-name "$CLUSTER_NAME" \
+  --region "$AWS_REGION" \
+  --namespace kube-system \
+  --service-account efs-csi-controller-sa \
+  --query 'associations[0].associationId' \
+  --output text 2>/dev/null || echo "")
+
+if [ -n "$EXISTING_EFS_ASSOC" ] && [ "$EXISTING_EFS_ASSOC" != "None" ]; then
+  echo -e "${YELLOW}⚠️  EFS CSI Pod Identity association already exists: $EXISTING_EFS_ASSOC${NC}"
+else
+  echo "Creating Pod Identity association for EFS CSI Driver..."
+  aws eks create-pod-identity-association \
+    --cluster-name "$CLUSTER_NAME" \
+    --namespace kube-system \
+    --service-account efs-csi-controller-sa \
+    --role-arn "$EFS_ROLE_ARN" \
+    --region "$AWS_REGION"
+
+  sleep 5
+
+  echo -e "${GREEN}✅ EFS CSI Pod Identity association created${NC}"
+fi
+
+# Install EFS CSI Driver via Helm
 if helm list -n kube-system | grep -q aws-efs-csi-driver; then
   echo -e "${YELLOW}⚠️  EFS CSI Driver already installed, upgrading...${NC}"
   helm upgrade aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver \
@@ -204,53 +234,19 @@ else
   echo -e "${GREEN}✅ EFS CSI Driver installed${NC}"
 fi
 
-# Create Pod Identity Association (EFS_ROLE_ARN set above from CFN or local creation)
-EXISTING_EFS_ASSOC=$(aws eks list-pod-identity-associations \
-  --cluster-name "$CLUSTER_NAME" \
-  --region "$AWS_REGION" \
-  --namespace kube-system \
-  --service-account efs-csi-controller-sa \
-  --query 'associations[0].associationId' \
-  --output text 2>/dev/null || echo "")
-
-if [ -n "$EXISTING_EFS_ASSOC" ] && [ "$EXISTING_EFS_ASSOC" != "None" ]; then
-  echo -e "${YELLOW}⚠️  EFS CSI Pod Identity association already exists: $EXISTING_EFS_ASSOC${NC}"
-else
-  echo "Creating Pod Identity association for EFS CSI Driver..."
-  aws eks create-pod-identity-association \
-    --cluster-name "$CLUSTER_NAME" \
-    --namespace kube-system \
-    --service-account efs-csi-controller-sa \
-    --role-arn "$EFS_ROLE_ARN" \
-    --region "$AWS_REGION"
-
-  echo -e "${GREEN}✅ EFS CSI Pod Identity association created${NC}"
-
-  # Restart EFS CSI controller so it picks up the new Pod Identity credentials
-  echo "Restarting EFS CSI controller to pick up new credentials..."
-  kubectl rollout restart deployment efs-csi-controller -n kube-system
-  kubectl rollout status deployment efs-csi-controller -n kube-system --timeout=60s
-fi
-
 echo ""
 
 # ============================================================================
-# Step 3: Create EFS FileSystem and StorageClass
+# Step 4: Create EFS FileSystem and StorageClass
 # ============================================================================
 
-echo -e "${BLUE}[3/8] Setting up EFS FileSystem...${NC}"
+echo -e "${BLUE}[4/8] Setting up EFS FileSystem...${NC}"
 
-# Use CFN-provisioned EFS if available, otherwise check by tag
-if [ -n "$CFN_EFS_ID" ] && [ "$CFN_EFS_ID" != "None" ]; then
-  EFS_ID="$CFN_EFS_ID"
-  echo -e "${GREEN}Using CFN-provisioned EFS FileSystem: $EFS_ID${NC}"
-else
-  # Check if EFS already exists
-  EFS_ID=$(aws efs describe-file-systems \
-    --region "$AWS_REGION" \
-    --query "FileSystems[?Tags[?Key=='Name' && Value=='openclaw-shared-storage']].FileSystemId" \
-    --output text 2>/dev/null || echo "")
-fi
+# Check if EFS already exists
+EFS_ID=$(aws efs describe-file-systems \
+  --region "$AWS_REGION" \
+  --query "FileSystems[?Tags[?Key=='Name' && Value=='openclaw-shared-storage']].FileSystemId" \
+  --output text 2>/dev/null || echo "")
 
 if [ -n "$EFS_ID" ]; then
   echo -e "${YELLOW}⚠️  EFS FileSystem already exists: $EFS_ID${NC}"
@@ -373,85 +369,71 @@ echo -e "${GREEN}✅ gp3 StorageClass created${NC}"
 echo ""
 
 # ============================================================================
-# Step 4: Install AWS Load Balancer Controller
+# Step 5: Install AWS Load Balancer Controller
 # ============================================================================
 
-echo -e "${BLUE}[4/8] Installing AWS Load Balancer Controller...${NC}"
+echo -e "${BLUE}[5/8] Installing AWS Load Balancer Controller...${NC}"
+
+# Create Pod Identity association for ALB Controller BEFORE helm install
+ALB_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
+
+EXISTING_ALB_ASSOC=$(aws eks list-pod-identity-associations \
+  --cluster-name "$CLUSTER_NAME" \
+  --region "$AWS_REGION" \
+  --namespace kube-system \
+  --service-account aws-load-balancer-controller \
+  --query 'associations[0].associationId' \
+  --output text 2>/dev/null || echo "")
+
+if [ -n "$EXISTING_ALB_ASSOC" ] && [ "$EXISTING_ALB_ASSOC" != "None" ]; then
+  echo -e "${YELLOW}⚠️  ALB Controller Pod Identity association already exists: $EXISTING_ALB_ASSOC${NC}"
+else
+  echo "Creating Pod Identity association for ALB Controller..."
+  aws eks create-pod-identity-association \
+    --cluster-name "$CLUSTER_NAME" \
+    --namespace kube-system \
+    --service-account aws-load-balancer-controller \
+    --role-arn "$ALB_ROLE_ARN" \
+    --region "$AWS_REGION"
+
+  sleep 5
+
+  echo -e "${GREEN}✅ ALB Controller Pod Identity association created${NC}"
+fi
 
 if helm list -n kube-system | grep -q aws-load-balancer-controller; then
   echo -e "${YELLOW}⚠️  ALB Controller already installed, skipping${NC}"
 else
-  # Add Helm repo (needed regardless of IAM path)
+  # Download IAM policy
+  curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json
+
+  # Create IAM policy
+  aws iam create-policy \
+    --policy-name AWSLoadBalancerControllerIAMPolicy \
+    --policy-document file:///tmp/iam_policy.json \
+    --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
+
+  # Create IAM service account (IRSA - kept for compatibility)
+  eksctl create iamserviceaccount \
+    --cluster="$CLUSTER_NAME" \
+    --namespace=kube-system \
+    --name=aws-load-balancer-controller \
+    --attach-policy-arn="arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy" \
+    --approve \
+    --region="$AWS_REGION" \
+    --override-existing-serviceaccounts 2>/dev/null || echo "Service account already exists"
+
+  # Add Helm repo
   helm repo add eks https://aws.github.io/eks-charts
   helm repo update
 
-  if [ -n "$CFN_ALB_ROLE_ARN" ]; then
-    echo -e "${GREEN}Using CFN-provisioned ALB Controller role: $CFN_ALB_ROLE_ARN${NC}"
-    echo "Skipping IAM policy creation and IRSA setup (Pod Identity handles auth)"
-
-    # Install ALB Controller — Pod Identity provides credentials, no IRSA needed
-    helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-      --namespace kube-system \
-      --set clusterName="$CLUSTER_NAME" \
-      --set serviceAccount.create=true \
-      --set serviceAccount.name=aws-load-balancer-controller \
-      --wait
-
-    # Create Pod Identity Association for ALB Controller (CFN role needs this)
-    EXISTING_ALB_ASSOC=$(aws eks list-pod-identity-associations \
-      --cluster-name "$CLUSTER_NAME" \
-      --region "$AWS_REGION" \
-      --namespace kube-system \
-      --service-account aws-load-balancer-controller \
-      --query 'associations[0].associationId' \
-      --output text 2>/dev/null || echo "")
-
-    if [ -n "$EXISTING_ALB_ASSOC" ] && [ "$EXISTING_ALB_ASSOC" != "None" ]; then
-      echo -e "${YELLOW}⚠️  ALB Controller Pod Identity association already exists: $EXISTING_ALB_ASSOC${NC}"
-    else
-      echo "Creating Pod Identity association for ALB Controller..."
-      aws eks create-pod-identity-association \
-        --cluster-name "$CLUSTER_NAME" \
-        --namespace kube-system \
-        --service-account aws-load-balancer-controller \
-        --role-arn "$CFN_ALB_ROLE_ARN" \
-        --region "$AWS_REGION"
-
-      echo -e "${GREEN}✅ ALB Controller Pod Identity association created${NC}"
-
-      # Restart ALB controller so it picks up the new Pod Identity credentials
-      echo "Restarting ALB controller to pick up new credentials..."
-      kubectl rollout restart deployment aws-load-balancer-controller -n kube-system
-      kubectl rollout status deployment aws-load-balancer-controller -n kube-system --timeout=60s
-    fi
-  else
-    # Download IAM policy
-    curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json
-
-    # Create IAM policy
-    aws iam create-policy \
-      --policy-name AWSLoadBalancerControllerIAMPolicy \
-      --policy-document file:///tmp/iam_policy.json \
-      --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
-
-    # Create IAM service account
-    eksctl create iamserviceaccount \
-      --cluster="$CLUSTER_NAME" \
-      --namespace=kube-system \
-      --name=aws-load-balancer-controller \
-      --attach-policy-arn="arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy" \
-      --approve \
-      --region="$AWS_REGION" \
-      --override-existing-serviceaccounts 2>/dev/null || echo "Service account already exists"
-
-    # Install ALB Controller
-    helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-      --namespace kube-system \
-      --set clusterName="$CLUSTER_NAME" \
-      --set serviceAccount.create=false \
-      --set serviceAccount.name=aws-load-balancer-controller \
-      --wait
-  fi
+  # Install ALB Controller
+  helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+    --namespace kube-system \
+    --set clusterName="$CLUSTER_NAME" \
+    --set serviceAccount.create=false \
+    --set serviceAccount.name=aws-load-balancer-controller \
+    --wait
 
   echo -e "${GREEN}✅ AWS Load Balancer Controller installed${NC}"
 fi
@@ -459,49 +441,12 @@ fi
 echo ""
 
 # ============================================================================
-# Step 5: Install Karpenter (Optional - skip for now)
+# Step 6: Install Karpenter (Optional - skip for now)
 # ============================================================================
 
-echo -e "${BLUE}[5/8] Karpenter (Optional)...${NC}"
+echo -e "${BLUE}[6/8] Karpenter (Optional)...${NC}"
 echo "Skipping Karpenter installation (using Managed Node Groups)"
 echo "To install Karpenter later, see: https://karpenter.sh/docs/getting-started/"
-echo ""
-
-# ============================================================================
-# Step 6: Install EKS Pod Identity
-# ============================================================================
-
-echo -e "${BLUE}[6/8] Installing EKS Pod Identity...${NC}"
-
-# Check if Pod Identity addon exists
-POD_IDENTITY_STATUS=$(aws eks describe-addon \
-  --cluster-name "$CLUSTER_NAME" \
-  --addon-name eks-pod-identity-agent \
-  --region "$AWS_REGION" \
-  --query 'addon.status' \
-  --output text 2>/dev/null || echo "NOT_INSTALLED")
-
-if [ "$POD_IDENTITY_STATUS" == "ACTIVE" ]; then
-  echo -e "${YELLOW}⚠️  Pod Identity addon already installed${NC}"
-else
-  echo "Installing Pod Identity addon..."
-  aws eks create-addon \
-    --cluster-name "$CLUSTER_NAME" \
-    --addon-name eks-pod-identity-agent \
-    --addon-version v1.3.10-eksbuild.2 \
-    --resolve-conflicts OVERWRITE \
-    --region "$AWS_REGION"
-
-  # Wait for addon to be active
-  echo "Waiting for Pod Identity addon to be active..."
-  aws eks wait addon-active \
-    --cluster-name "$CLUSTER_NAME" \
-    --addon-name eks-pod-identity-agent \
-    --region "$AWS_REGION"
-
-  echo -e "${GREEN}✅ Pod Identity addon installed${NC}"
-fi
-
 echo ""
 
 # ============================================================================
@@ -518,13 +463,13 @@ if [ "$KATA_NODE_COUNT" -eq 0 ]; then
   echo "   (Cluster was deployed without Kata support)"
 else
   echo "Found $KATA_NODE_COUNT Kata node(s), installing Kata Containers..."
-  
+
   # Wait for Kata nodes to be Ready
   echo "Waiting for Kata nodes to be ready..."
   kubectl wait --for=condition=Ready nodes -l workload-type=kata --timeout=600s || \
     echo "  (Some nodes may still be initializing)"
-  
-  # Step 6.1: Install Kata RBAC with CRD permissions
+
+  # Step 7.1: Install Kata RBAC with CRD permissions
   echo ""
   echo "Installing Kata RBAC..."
   cat <<EOF | kubectl apply -f -
@@ -560,7 +505,7 @@ subjects:
   namespace: kube-system
 EOF
 
-  # Step 6.2: Deploy Kata DaemonSet (fixed version)
+  # Step 7.2: Deploy Kata DaemonSet (fixed version)
   echo ""
   echo "Deploying Kata DaemonSet..."
   cat <<EOF | kubectl apply -f -
@@ -633,18 +578,18 @@ spec:
         hostPath:
           path: /
 EOF
-  
-  # Step 6.3: Wait for Kata pods to be ready
+
+  # Step 7.3: Wait for Kata pods to be ready
   echo ""
   echo "Waiting for Kata deployment to complete (this may take 5-10 minutes)..."
   kubectl -n kube-system wait --timeout=10m --for=condition=Ready -l name=kata-deploy pod || \
     echo "  (Kata pods still initializing, check status with: kubectl get pods -n kube-system -l name=kata-deploy)"
-  
-  # Step 6.4: Verify Kata pods
+
+  # Step 7.4: Verify Kata pods
   echo ""
   echo "Kata pods status:"
   kubectl get pods -n kube-system -l name=kata-deploy -o wide
-  
+
   echo -e "${GREEN}✅ Kata Containers installed${NC}"
   echo "   Pods: Running on $KATA_NODE_COUNT node(s)"
 fi
@@ -714,12 +659,12 @@ echo ""
 echo -e "${GREEN}=== Phase 2 Complete ===${NC}"
 echo ""
 echo "Installed Components:"
+echo "  ✅ EKS Pod Identity Agent"
 echo "  ✅ EFS CSI Driver"
 echo "  ✅ EFS FileSystem: $EFS_ID"
 echo "  ✅ EFS StorageClass: efs-sc (ReadWriteMany, cross-AZ)"
 echo "  ✅ EBS StorageClass: gp3 (ReadWriteOnce, high-performance)"
 echo "  ✅ AWS Load Balancer Controller"
-echo "  ✅ EKS Pod Identity"
 
 if [ "$KATA_NODE_COUNT" -gt 0 ]; then
   echo "  ✅ Kata Containers (DaemonSet on $KATA_NODE_COUNT node(s))"
