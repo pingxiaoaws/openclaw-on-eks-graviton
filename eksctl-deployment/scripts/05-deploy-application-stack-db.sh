@@ -411,6 +411,7 @@ if [[ "$BUILD_IMAGE" =~ ^[Yy](es)?$ ]]; then
     export AWS_REGION
     export AWS_ACCOUNT
     "$BUILD_SCRIPT"
+    PROVISIONING_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest"
     echo -e "${GREEN}✅ Docker image built and pushed${NC}"
   else
     echo -e "${RED}❌ Build script not found: $BUILD_SCRIPT${NC}"
@@ -418,7 +419,8 @@ if [[ "$BUILD_IMAGE" =~ ^[Yy](es)?$ ]]; then
   fi
 else
   echo -e "${YELLOW}⚠️  Skipping Docker image build${NC}"
-  echo "Using existing image: ${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest"
+  PROVISIONING_IMAGE="970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning-chinaregion:latest"
+  echo "Using existing image: ${PROVISIONING_IMAGE}"
 fi
 
 echo ""
@@ -482,7 +484,7 @@ spec:
       serviceAccountName: openclaw-provisioner
       containers:
       - name: provisioning
-        image: 970547376847.dkr.ecr.us-west-2.amazonaws.com/openclaw-provisioning-chinaregion:latest
+        image: ${PROVISIONING_IMAGE}
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

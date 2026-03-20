@@ -24,7 +24,7 @@ echo ""
 
 # Configuration
 REPO_DIR="$HOME/openclaw-on-eks-graviton"
-ECR_REGISTRY="970547376847.dkr.ecr.us-west-2.amazonaws.com"
+ECR_REGISTRY="${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}.dkr.ecr.${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}.amazonaws.com"
 ECR_REPO="openclaw-provisioning-chinaregion"
 IMAGE_TAG="latest"
 REGION="us-west-2"
