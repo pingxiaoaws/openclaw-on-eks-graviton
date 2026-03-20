@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # Phase 1: Deploy EKS Cluster using eksctl
 # Creates VPC, EKS cluster, node groups, and managed add-ons
 # Supports both standard and Kata Containers configurations

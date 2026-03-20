@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # Complete Cleanup Script for OpenClaw Platform
 # Deletes ALL resources including:
 # - Kubernetes resources

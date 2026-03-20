@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 set -euo pipefail
 
 # Colors for output
@@ -183,21 +184,19 @@ aws ec2 create-tags --resources ${CLUSTER_SG} \
 print_status "Tagged security group: ${CLUSTER_SG}"
 echo ""
 
-# Step 3: Add IAM identity mapping for Karpenter nodes
-echo -e "${BLUE}[5/7] Adding IAM identity mapping...${NC}"
+# Step 3: Add EKS Access Entry for Karpenter nodes
+echo -e "${BLUE}[5/7] Adding Karpenter node access entry...${NC}"
 
-if eksctl get iamidentitymapping --cluster ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --arn ${KARPENTER_NODE_ROLE_ARN} &>/dev/null; then
-    print_warning "IAM identity mapping already exists"
+if aws eks describe-access-entry --cluster-name ${CLUSTER_NAME} --principal-arn ${KARPENTER_NODE_ROLE_ARN} --region ${AWS_DEFAULT_REGION} &>/dev/null; then
+    print_warning "Karpenter node access entry already exists (created by CFN)"
 else
-    print_info "Creating IAM identity mapping..."
-    eksctl create iamidentitymapping \
-      --cluster ${CLUSTER_NAME} \
-      --region ${AWS_DEFAULT_REGION} \
-      --arn "${KARPENTER_NODE_ROLE_ARN}" \
-      --username system:node:{{EC2PrivateDNSName}} \
-      --group system:bootstrappers \
-      --group system:nodes
-    print_status "IAM identity mapping created"
+    print_info "Creating EKS access entry for Karpenter nodes..."
+    aws eks create-access-entry \
+      --cluster-name ${CLUSTER_NAME} \
+      --principal-arn "${KARPENTER_NODE_ROLE_ARN}" \
+      --type EC2_LINUX \
+      --region ${AWS_DEFAULT_REGION}
+    print_status "Karpenter node access entry created"
 fi
 echo ""
 
@@ -207,26 +206,7 @@ export CLUSTER_ENDPOINT=$(aws eks describe-cluster --name ${CLUSTER_NAME} --regi
 
 print_info "Cluster endpoint: ${CLUSTER_ENDPOINT}"
 
-# Logout of helm registry to perform an unauthenticated pull
-helm registry logout public.ecr.aws 2>/dev/null || true
-
-print_info "Installing Karpenter ${KARPENTER_VERSION}..."
-helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
-  --version "${KARPENTER_VERSION}" \
-  --namespace "${KARPENTER_NAMESPACE}" \
-  --create-namespace \
-  --set "settings.clusterName=${CLUSTER_NAME}" \
-  --set "settings.interruptionQueue=${KARPENTER_QUEUE_NAME}" \
-  --set controller.resources.requests.cpu=1 \
-  --set controller.resources.requests.memory=1Gi \
-  --set controller.resources.limits.cpu=1 \
-  --set controller.resources.limits.memory=1Gi \
-  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_CONTROLLER_ROLE_ARN}" \
-  --wait
-
-print_status "Karpenter installed successfully"
-
-# Create Pod Identity Association for Karpenter (when using CFN-provisioned role)
+# Create Pod Identity Association BEFORE helm install (so pods can authenticate on startup)
 if [ "$USE_CFN_KARPENTER" = true ]; then
   EXISTING_KARPENTER_ASSOC=$(aws eks list-pod-identity-associations \
     --cluster-name "$CLUSTER_NAME" \
@@ -246,15 +226,28 @@ if [ "$USE_CFN_KARPENTER" = true ]; then
       --service-account karpenter \
       --role-arn "$KARPENTER_CONTROLLER_ROLE_ARN" \
       --region "$AWS_DEFAULT_REGION"
-
     print_status "Karpenter Pod Identity association created"
-
-    # Restart Karpenter so it picks up the new Pod Identity credentials
-    print_info "Restarting Karpenter to pick up new credentials..."
-    kubectl rollout restart deployment karpenter -n "${KARPENTER_NAMESPACE}"
-    kubectl rollout status deployment karpenter -n "${KARPENTER_NAMESPACE}" --timeout=60s
   fi
 fi
+
+# Logout of helm registry to perform an unauthenticated pull
+helm registry logout public.ecr.aws 2>/dev/null || true
+
+print_info "Installing Karpenter ${KARPENTER_VERSION}..."
+helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
+  --version "${KARPENTER_VERSION}" \
+  --namespace "${KARPENTER_NAMESPACE}" \
+  --create-namespace \
+  --set "settings.clusterName=${CLUSTER_NAME}" \
+  --set "settings.interruptionQueue=${KARPENTER_QUEUE_NAME}" \
+  --set controller.resources.requests.cpu=1 \
+  --set controller.resources.requests.memory=1Gi \
+  --set controller.resources.limits.cpu=1 \
+  --set controller.resources.limits.memory=1Gi \
+  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_CONTROLLER_ROLE_ARN}" \
+  --wait --timeout 5m
+
+print_status "Karpenter installed successfully"
 
 # Wait for Karpenter to be ready
 print_info "Waiting for Karpenter pods to be ready..."

@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # Cleanup Application Stack (reverse of 05-deploy-application-stack-db.sh)
 #
 # Deletes all resources created by the application stack deployment:

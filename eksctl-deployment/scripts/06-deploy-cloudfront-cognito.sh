@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # ============================================================================
 # DEPRECATED: This script has been replaced by 04-deploy-application-stack.sh
 # ============================================================================

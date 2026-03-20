@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # Phase 3: Deploy Complete Application Stack
 # - OpenClaw Operator
 # - Bedrock IAM Role & Pod Identity

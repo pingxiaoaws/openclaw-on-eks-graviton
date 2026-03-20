@@ -1,4 +1,5 @@
 #!/bin/bash
+export AWS_PAGER=""
 # Verification Script for EKS Cluster Deployment
 # Checks nodes, add-ons, controllers, and Kata setup
 
