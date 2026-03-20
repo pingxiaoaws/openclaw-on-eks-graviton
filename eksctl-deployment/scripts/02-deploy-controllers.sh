@@ -268,7 +268,7 @@ else
   helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver/
   helm repo update
 
-  # Install EFS CSI Driver (without IRSA annotation, using Pod Identity)
+  # Install EFS CSI Driver (using Pod Identity)
   helm upgrade --install aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver \
     --namespace kube-system \
     --set controller.serviceAccount.create=true \
