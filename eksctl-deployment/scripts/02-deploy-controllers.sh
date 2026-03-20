@@ -443,15 +443,45 @@ else
       --policy-document file:///tmp/iam_policy.json \
       --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
 
-    # Create IAM service account (IRSA - kept for compatibility)
-    eksctl create iamserviceaccount \
-      --cluster="$CLUSTER_NAME" \
-      --namespace=kube-system \
-      --name=aws-load-balancer-controller \
-      --attach-policy-arn="arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy" \
-      --approve \
-      --region="$AWS_REGION" \
-      --override-existing-serviceaccounts 2>/dev/null || echo "Service account already exists"
+    # Create IAM Role for ALB Controller (Pod Identity)
+    ALB_ROLE_NAME="AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
+    ALB_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy"
+
+    if aws iam get-role --role-name "$ALB_ROLE_NAME" &>/dev/null; then
+      echo -e "${YELLOW}⚠️  ALB Controller Role already exists${NC}"
+    else
+      echo "Creating ALB Controller IAM role with Pod Identity trust policy..."
+      cat > /tmp/alb-trust-policy.json <<EOFTRUST
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "pods.eks.amazonaws.com"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }
+  ]
+}
+EOFTRUST
+
+      aws iam create-role \
+        --role-name "$ALB_ROLE_NAME" \
+        --assume-role-policy-document file:///tmp/alb-trust-policy.json \
+        --description "IAM role for ALB Controller via Pod Identity"
+
+      aws iam attach-role-policy \
+        --role-name "$ALB_ROLE_NAME" \
+        --policy-arn "$ALB_POLICY_ARN"
+
+      echo -e "${GREEN}✅ ALB Controller IAM role created${NC}"
+    fi
+
+    ALB_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${ALB_ROLE_NAME}"
   fi
 
   # Add Helm repo
@@ -459,16 +489,10 @@ else
   helm repo update
 
   # Install ALB Controller
-  # When using CFN + Pod Identity, SA doesn't exist yet (eksctl create iamserviceaccount was skipped)
-  if [ "$USE_CFN" = true ]; then
-    SA_CREATE=true
-  else
-    SA_CREATE=false
-  fi
   helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
     --namespace kube-system \
     --set clusterName="$CLUSTER_NAME" \
-    --set serviceAccount.create="$SA_CREATE" \
+    --set serviceAccount.create=true \
     --set serviceAccount.name=aws-load-balancer-controller \
     --wait
 
