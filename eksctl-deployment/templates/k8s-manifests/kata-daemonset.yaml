@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kata-deploy
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: kata-deploy
+  template:
+    metadata:
+      labels:
+        name: kata-deploy
+    spec:
+      serviceAccountName: kata-deploy-sa
+      hostPID: true
+      tolerations:
+      - key: kata-dedicated
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: kube-kata
+        image: quay.io/kata-containers/kata-deploy:3.27.0
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
+        command:
+        - /usr/bin/kata-deploy
+        - install
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: DEBUG
+          value: "false"
+        - name: SHIMS_AARCH64
+          value: "fc"
+        - name: DEFAULT_SHIM_AARCH64
+          value: "fc"
+        - name: SNAPSHOTTER_HANDLER_MAPPING_AARCH64
+          value: "fc:devmapper"
+        - name: INSTALLATION_PREFIX
+          value: ""
+        volumeMounts:
+        - name: crio-conf
+          mountPath: /etc/crio/
+        - name: containerd-conf
+          mountPath: /etc/containerd/
+        - name: host
+          mountPath: /host/
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /usr/bin/kata-deploy
+              - cleanup
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - name: crio-conf
+        hostPath:
+          path: /etc/crio/
+      - name: containerd-conf
+        hostPath:
+          path: /etc/containerd/
+      - name: host
+        hostPath:
+          path: /

@@ -16,14 +16,17 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)"
+TEMPLATE_DIR="$(cd "${SCRIPT_DIR}/../templates"; pwd)"
+
 echo -e "${BLUE}=== Phase 2: Controllers and Operators Deployment ===${NC}"
 echo ""
 
 # Get cluster info
 CLUSTER_CONTEXT=$(kubectl config current-context)
 # Extract cluster name and region (supports both ARN and eksctl formats)
-if [[ "$CLUSTER_CONTEXT" == arn:aws:eks:* ]]; then
-  # ARN format: arn:aws:eks:region:account:cluster/cluster-name
+if [[ "$CLUSTER_CONTEXT" == arn:aws*:eks:* ]]; then
+  # ARN format: arn:aws:eks:region:account:cluster/cluster-name (or arn:aws-cn:eks:...)
   AWS_REGION=$(echo "$CLUSTER_CONTEXT" | cut -d':' -f4)
   CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | cut -d'/' -f2)
 else
@@ -33,9 +36,51 @@ else
 fi
 AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 
+# Detect AWS partition (aws vs aws-cn for China regions)
+if [[ "$AWS_REGION" == cn-* ]]; then
+  AWS_PARTITION="aws-cn"
+else
+  AWS_PARTITION="aws"
+fi
+export AWS_PARTITION
+
 echo "Cluster: $CLUSTER_NAME"
 echo "Region: $AWS_REGION"
 echo "Account: $AWS_ACCOUNT"
+echo ""
+
+# ============================================================================
+# Detect CloudFormation pre-provisioned resources
+# ============================================================================
+
+CFN_STACK_NAME="cloudlab-template-global"
+USE_CFN=false
+CFN_EFS_ROLE_ARN=""
+CFN_ALB_ROLE_ARN=""
+CFN_EFS_ID=""
+
+echo -e "${BLUE}Checking for CloudFormation stack '${CFN_STACK_NAME}'...${NC}"
+
+CFN_OUTPUTS=$(aws cloudformation describe-stacks \
+  --stack-name "$CFN_STACK_NAME" \
+  --region "$AWS_REGION" \
+  --query 'Stacks[0].Outputs' \
+  --output json 2>/dev/null || echo "")
+
+if [ -n "$CFN_OUTPUTS" ] && [ "$CFN_OUTPUTS" != "null" ] && [ "$CFN_OUTPUTS" != "None" ]; then
+  USE_CFN=true
+  CFN_EFS_ROLE_ARN=$(echo "$CFN_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EFSCSIDriverRoleArn") | .OutputValue // empty')
+  CFN_ALB_ROLE_ARN=$(echo "$CFN_OUTPUTS" | jq -r '.[] | select(.OutputKey=="ALBControllerRoleArn") | .OutputValue // empty')
+  CFN_EFS_ID=$(echo "$CFN_OUTPUTS" | jq -r '.[] | select(.OutputKey=="EFSFileSystemId") | .OutputValue // empty')
+
+  echo -e "${GREEN}Found CloudFormation stack '${CFN_STACK_NAME}' with pre-provisioned resources:${NC}"
+  [ -n "$CFN_EFS_ROLE_ARN" ] && echo "  EFS CSI Driver Role ARN: $CFN_EFS_ROLE_ARN"
+  [ -n "$CFN_ALB_ROLE_ARN" ] && echo "  ALB Controller Role ARN: $CFN_ALB_ROLE_ARN"
+  [ -n "$CFN_EFS_ID" ]       && echo "  EFS FileSystem ID:       $CFN_EFS_ID"
+else
+  echo -e "${YELLOW}No CloudFormation stack found, will create all resources from scratch${NC}"
+fi
+
 echo ""
 
 # ============================================================================
@@ -82,16 +127,20 @@ echo ""
 
 echo -e "${BLUE}[2/8] Creating EFS CSI Driver IAM Role (Pod Identity)...${NC}"
 
-EFS_POLICY_NAME="AmazonEKS_EFS_CSI_Driver_Policy"
-EFS_ROLE_NAME="AmazonEKS_EFS_CSI_DriverRole"
-EFS_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
-
-# Create IAM Policy for EFS CSI Driver
-if aws iam get-policy --policy-arn "$EFS_POLICY_ARN" &>/dev/null; then
-  echo -e "${YELLOW}⚠️  EFS CSI Policy already exists${NC}"
+if [ "$USE_CFN" = true ] && [ -n "$CFN_EFS_ROLE_ARN" ]; then
+  echo -e "${GREEN}Using CFN pre-provisioned EFS CSI Driver Role: $CFN_EFS_ROLE_ARN${NC}"
+  EFS_ROLE_ARN="$CFN_EFS_ROLE_ARN"
 else
-  echo "Creating EFS CSI IAM policy..."
-  cat > /tmp/efs-csi-policy.json <<EOFPOLICY
+  EFS_POLICY_NAME="AmazonEKS_EFS_CSI_Driver_Policy"
+  EFS_ROLE_NAME="AmazonEKS_EFS_CSI_DriverRole"
+  EFS_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/${EFS_POLICY_NAME}"
+
+  # Create IAM Policy for EFS CSI Driver
+  if aws iam get-policy --policy-arn "$EFS_POLICY_ARN" &>/dev/null; then
+    echo -e "${YELLOW}⚠️  EFS CSI Policy already exists${NC}"
+  else
+    echo "Creating EFS CSI IAM policy..."
+    cat > /tmp/efs-csi-policy.json <<EOFPOLICY
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -132,20 +181,20 @@ else
 }
 EOFPOLICY
 
-  aws iam create-policy \
-    --policy-name "$EFS_POLICY_NAME" \
-    --policy-document file:///tmp/efs-csi-policy.json \
-    --description "Policy for EFS CSI Driver"
+    aws iam create-policy \
+      --policy-name "$EFS_POLICY_NAME" \
+      --policy-document file:///tmp/efs-csi-policy.json \
+      --description "Policy for EFS CSI Driver"
 
-  echo -e "${GREEN}✅ EFS CSI IAM policy created${NC}"
-fi
+    echo -e "${GREEN}✅ EFS CSI IAM policy created${NC}"
+  fi
 
-# Create IAM Role for EFS CSI Driver (Pod Identity)
-if aws iam get-role --role-name "$EFS_ROLE_NAME" &>/dev/null; then
-  echo -e "${YELLOW}⚠️  EFS CSI Role already exists${NC}"
-else
-  echo "Creating EFS CSI IAM role with Pod Identity trust policy..."
-  cat > /tmp/efs-csi-trust-policy.json <<EOFTRUST
+  # Create IAM Role for EFS CSI Driver (Pod Identity)
+  if aws iam get-role --role-name "$EFS_ROLE_NAME" &>/dev/null; then
+    echo -e "${YELLOW}⚠️  EFS CSI Role already exists${NC}"
+  else
+    echo "Creating EFS CSI IAM role with Pod Identity trust policy..."
+    cat > /tmp/efs-csi-trust-policy.json <<EOFTRUST
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -163,16 +212,19 @@ else
 }
 EOFTRUST
 
-  aws iam create-role \
-    --role-name "$EFS_ROLE_NAME" \
-    --assume-role-policy-document file:///tmp/efs-csi-trust-policy.json \
-    --description "IAM role for EFS CSI Driver via Pod Identity"
+    aws iam create-role \
+      --role-name "$EFS_ROLE_NAME" \
+      --assume-role-policy-document file:///tmp/efs-csi-trust-policy.json \
+      --description "IAM role for EFS CSI Driver via Pod Identity"
 
-  aws iam attach-role-policy \
-    --role-name "$EFS_ROLE_NAME" \
-    --policy-arn "$EFS_POLICY_ARN"
+    aws iam attach-role-policy \
+      --role-name "$EFS_ROLE_NAME" \
+      --policy-arn "$EFS_POLICY_ARN"
 
-  echo -e "${GREEN}✅ EFS CSI IAM role created${NC}"
+    echo -e "${GREEN}✅ EFS CSI IAM role created${NC}"
+  fi
+
+  EFS_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
 fi
 
 echo ""
@@ -184,7 +236,7 @@ echo ""
 echo -e "${BLUE}[3/8] Installing EFS CSI Driver...${NC}"
 
 # Create Pod Identity Association BEFORE helm install so pods pick up credentials
-EFS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${EFS_ROLE_NAME}"
+# EFS_ROLE_ARN is already set in Step 2 (either from CFN or freshly created)
 
 EXISTING_EFS_ASSOC=$(aws eks list-pod-identity-associations \
   --cluster-name "$CLUSTER_NAME" \
@@ -224,7 +276,7 @@ else
   helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver/
   helm repo update
 
-  # Install EFS CSI Driver (without IRSA annotation, using Pod Identity)
+  # Install EFS CSI Driver (using Pod Identity)
   helm upgrade --install aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver \
     --namespace kube-system \
     --set controller.serviceAccount.create=true \
@@ -242,15 +294,19 @@ echo ""
 
 echo -e "${BLUE}[4/8] Setting up EFS FileSystem...${NC}"
 
-# Check if EFS already exists
-EFS_ID=$(aws efs describe-file-systems \
-  --region "$AWS_REGION" \
-  --query "FileSystems[?Tags[?Key=='Name' && Value=='openclaw-shared-storage']].FileSystemId" \
-  --output text 2>/dev/null || echo "")
-
-if [ -n "$EFS_ID" ]; then
-  echo -e "${YELLOW}⚠️  EFS FileSystem already exists: $EFS_ID${NC}"
+if [ "$USE_CFN" = true ] && [ -n "$CFN_EFS_ID" ]; then
+  echo -e "${GREEN}Using CFN pre-provisioned EFS FileSystem: $CFN_EFS_ID${NC}"
+  EFS_ID="$CFN_EFS_ID"
 else
+  # Check if EFS already exists
+  EFS_ID=$(aws efs describe-file-systems \
+    --region "$AWS_REGION" \
+    --query "FileSystems[?Tags[?Key=='Name' && Value=='openclaw-shared-storage']].FileSystemId" \
+    --output text 2>/dev/null || echo "")
+
+  if [ -n "$EFS_ID" ]; then
+    echo -e "${YELLOW}⚠️  EFS FileSystem already exists: $EFS_ID${NC}"
+  else
   # Get VPC ID
   VPC_ID=$(aws eks describe-cluster \
     --name "$CLUSTER_NAME" \
@@ -323,47 +379,20 @@ else
       --region "$AWS_REGION" 2>/dev/null || echo "Mount target already exists"
   done
 
-  echo -e "${GREEN}✅ EFS FileSystem created: $EFS_ID${NC}"
+    echo -e "${GREEN}✅ EFS FileSystem created: $EFS_ID${NC}"
+  fi
 fi
 
 # Create StorageClass
 echo "Creating EFS StorageClass..."
-cat <<EOF | kubectl apply -f -
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: efs-sc
-provisioner: efs.csi.aws.com
-parameters:
-  provisioningMode: efs-ap
-  fileSystemId: ${EFS_ID}
-  directoryPerms: "700"
-  basePath: /openclaw
-  uid: "1000"
-  gid: "1000"
-mountOptions:
-  - tls
-volumeBindingMode: WaitForFirstConsumer
-reclaimPolicy: Delete
-EOF
+export EFS_ID
+envsubst < "${TEMPLATE_DIR}/k8s-manifests/efs-storageclass.yaml.tpl" | kubectl apply -f -
 
 echo -e "${GREEN}✅ EFS StorageClass created${NC}"
 
 # Create gp3 StorageClass for EBS volumes (higher performance than gp2)
 echo "Creating gp3 StorageClass..."
-cat <<EOF | kubectl apply -f -
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: gp3
-provisioner: ebs.csi.aws.com
-parameters:
-  type: gp3
-  encrypted: "true"
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-reclaimPolicy: Delete
-EOF
+kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/gp3-storageclass.yaml"
 
 echo -e "${GREEN}✅ gp3 StorageClass created${NC}"
 echo ""
@@ -374,9 +403,15 @@ echo ""
 
 echo -e "${BLUE}[5/8] Installing AWS Load Balancer Controller...${NC}"
 
-# Create Pod Identity association for ALB Controller BEFORE helm install
-ALB_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
+# Set ALB Role ARN (from CFN or default naming convention)
+if [ "$USE_CFN" = true ] && [ -n "$CFN_ALB_ROLE_ARN" ]; then
+  ALB_ROLE_ARN="$CFN_ALB_ROLE_ARN"
+  echo -e "${GREEN}Using CFN pre-provisioned ALB Controller Role: $ALB_ROLE_ARN${NC}"
+else
+  ALB_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
+fi
 
+# Create Pod Identity association for ALB Controller BEFORE helm install
 EXISTING_ALB_ASSOC=$(aws eks list-pod-identity-associations \
   --cluster-name "$CLUSTER_NAME" \
   --region "$AWS_REGION" \
@@ -404,24 +439,62 @@ fi
 if helm list -n kube-system | grep -q aws-load-balancer-controller; then
   echo -e "${YELLOW}⚠️  ALB Controller already installed, skipping${NC}"
 else
-  # Download IAM policy
-  curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json
+  if [ "$USE_CFN" = true ] && [ -n "$CFN_ALB_ROLE_ARN" ]; then
+    echo -e "${GREEN}Skipping ALB IAM policy/role creation (provided by CFN)${NC}"
+  else
+    # Use local IAM policy (partition-aware: global vs China)
+    if [ "$AWS_PARTITION" = "aws-cn" ]; then
+      cp "${TEMPLATE_DIR}/iam-policies/alb-controller-policy-cn.json" /tmp/iam_policy.json
+    else
+      cp "${TEMPLATE_DIR}/iam-policies/alb-controller-policy.json" /tmp/iam_policy.json
+    fi
 
-  # Create IAM policy
-  aws iam create-policy \
-    --policy-name AWSLoadBalancerControllerIAMPolicy \
-    --policy-document file:///tmp/iam_policy.json \
-    --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
+    # Create IAM policy
+    aws iam create-policy \
+      --policy-name AWSLoadBalancerControllerIAMPolicy \
+      --policy-document file:///tmp/iam_policy.json \
+      --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
 
-  # Create IAM service account (IRSA - kept for compatibility)
-  eksctl create iamserviceaccount \
-    --cluster="$CLUSTER_NAME" \
-    --namespace=kube-system \
-    --name=aws-load-balancer-controller \
-    --attach-policy-arn="arn:aws:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy" \
-    --approve \
-    --region="$AWS_REGION" \
-    --override-existing-serviceaccounts 2>/dev/null || echo "Service account already exists"
+    # Create IAM Role for ALB Controller (Pod Identity)
+    ALB_ROLE_NAME="AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
+    ALB_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy"
+
+    if aws iam get-role --role-name "$ALB_ROLE_NAME" &>/dev/null; then
+      echo -e "${YELLOW}⚠️  ALB Controller Role already exists${NC}"
+    else
+      echo "Creating ALB Controller IAM role with Pod Identity trust policy..."
+      cat > /tmp/alb-trust-policy.json <<EOFTRUST
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "pods.eks.amazonaws.com"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }
+  ]
+}
+EOFTRUST
+
+      aws iam create-role \
+        --role-name "$ALB_ROLE_NAME" \
+        --assume-role-policy-document file:///tmp/alb-trust-policy.json \
+        --description "IAM role for ALB Controller via Pod Identity"
+
+      aws iam attach-role-policy \
+        --role-name "$ALB_ROLE_NAME" \
+        --policy-arn "$ALB_POLICY_ARN"
+
+      echo -e "${GREEN}✅ ALB Controller IAM role created${NC}"
+    fi
+
+    ALB_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/${ALB_ROLE_NAME}"
+  fi
 
   # Add Helm repo
   helm repo add eks https://aws.github.io/eks-charts
@@ -431,7 +504,7 @@ else
   helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
     --namespace kube-system \
     --set clusterName="$CLUSTER_NAME" \
-    --set serviceAccount.create=false \
+    --set serviceAccount.create=true \
     --set serviceAccount.name=aws-load-balancer-controller \
     --wait
 
@@ -472,112 +545,12 @@ else
   # Step 7.1: Install Kata RBAC with CRD permissions
   echo ""
   echo "Installing Kata RBAC..."
-  cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: kata-deploy-sa
-  namespace: kube-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kata-deploy-role
-rules:
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["get", "list", "patch"]
-- apiGroups: ["apiextensions.k8s.io"]
-  resources: ["customresourcedefinitions"]
-  verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kata-deploy-rb
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kata-deploy-role
-subjects:
-- kind: ServiceAccount
-  name: kata-deploy-sa
-  namespace: kube-system
-EOF
+  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-rbac.yaml"
 
   # Step 7.2: Deploy Kata DaemonSet (fixed version)
   echo ""
   echo "Deploying Kata DaemonSet..."
-  cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: kata-deploy
-  namespace: kube-system
-spec:
-  selector:
-    matchLabels:
-      name: kata-deploy
-  template:
-    metadata:
-      labels:
-        name: kata-deploy
-    spec:
-      serviceAccountName: kata-deploy-sa
-      hostPID: true
-      tolerations:
-      - key: kata-dedicated
-        operator: Exists
-        effect: NoSchedule
-      containers:
-      - name: kube-kata
-        image: quay.io/kata-containers/kata-deploy:3.27.0
-        imagePullPolicy: Always
-        securityContext:
-          privileged: true
-        command:
-        - /usr/bin/kata-deploy
-        - install
-        env:
-        - name: NODE_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: spec.nodeName
-        - name: DEBUG
-          value: "false"
-        - name: SHIMS_AARCH64
-          value: "fc"
-        - name: DEFAULT_SHIM_AARCH64
-          value: "fc"
-        - name: SNAPSHOTTER_HANDLER_MAPPING_AARCH64
-          value: "fc:devmapper"
-        - name: INSTALLATION_PREFIX
-          value: ""
-        volumeMounts:
-        - name: crio-conf
-          mountPath: /etc/crio/
-        - name: containerd-conf
-          mountPath: /etc/containerd/
-        - name: host
-          mountPath: /host/
-        lifecycle:
-          preStop:
-            exec:
-              command:
-              - /usr/bin/kata-deploy
-              - cleanup
-      terminationGracePeriodSeconds: 120
-      volumes:
-      - name: crio-conf
-        hostPath:
-          path: /etc/crio/
-      - name: containerd-conf
-        hostPath:
-          path: /etc/containerd/
-      - name: host
-        hostPath:
-          path: /
-EOF
+  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-daemonset.yaml"
 
   # Step 7.3: Wait for Kata pods to be ready
   echo ""
@@ -605,42 +578,7 @@ echo -e "${BLUE}[8/8] Creating Kata RuntimeClasses...${NC}"
 if [ "$KATA_NODE_COUNT" -gt 0 ]; then
   # Create Kata RuntimeClasses
   echo "Creating Kata RuntimeClasses..."
-  cat <<EOF | kubectl apply -f -
----
-# Kata Firecracker RuntimeClass
-apiVersion: node.k8s.io/v1
-kind: RuntimeClass
-metadata:
-  name: kata-fc
-  labels:
-    kata-deploy/instance: default
-handler: kata-fc
-overhead:
-  podFixed:
-    cpu: 250m
-    memory: 130Mi
-scheduling:
-  nodeSelector:
-    katacontainers.io/kata-runtime: "true"
-  tolerations:
-    - key: kata-dedicated
-      operator: Exists
-      effect: NoSchedule
----
-# Kata QEMU RuntimeClass
-apiVersion: node.k8s.io/v1
-kind: RuntimeClass
-metadata:
-  name: kata-qemu
-handler: kata-qemu
-scheduling:
-  nodeSelector:
-    workload-type: kata
-  tolerations:
-    - key: kata-dedicated
-      operator: Exists
-      effect: NoSchedule
-EOF
+  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-runtimeclasses.yaml"
 
   echo ""
   echo "Available RuntimeClasses:"

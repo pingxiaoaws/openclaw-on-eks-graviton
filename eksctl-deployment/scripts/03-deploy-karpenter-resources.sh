@@ -11,6 +11,7 @@ NC='\033[0m' # No Color
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="${SCRIPT_DIR}/../configs"
+TEMPLATE_DIR="$(cd "${SCRIPT_DIR}/../templates"; pwd)"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Karpenter Installation${NC}"
@@ -41,7 +42,11 @@ export KARPENTER_VERSION="1.9.0"
 export CLUSTER_NAME=$(kubectl config current-context | cut -d'/' -f2)
 export AWS_DEFAULT_REGION=$(kubectl config current-context | cut -d':' -f4)
 export AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
-export AWS_PARTITION="aws"
+if [[ "$AWS_DEFAULT_REGION" == cn-* ]]; then
+  export AWS_PARTITION="aws-cn"
+else
+  export AWS_PARTITION="aws"
+fi
 export TEMPOUT=$(mktemp)
 
 print_info "CLUSTER_NAME: ${CLUSTER_NAME}"
@@ -92,8 +97,8 @@ if [ "$USE_CFN_KARPENTER" = true ]; then
   KARPENTER_NODE_ROLE_ARN="$CFN_KARPENTER_NODE_ROLE_ARN"
   KARPENTER_QUEUE_NAME="$CFN_KARPENTER_QUEUE_NAME"
 else
-  print_info "Downloading CloudFormation template..."
-  curl -fsSL "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml" > "${TEMPOUT}"
+  print_info "Copying local CloudFormation template..."
+  cp "${TEMPLATE_DIR}/karpenter-cloudformation.yaml" "${TEMPOUT}"
 
   if aws cloudformation describe-stacks --stack-name "Karpenter-${CLUSTER_NAME}" --region ${AWS_DEFAULT_REGION} &>/dev/null; then
       print_warning "CloudFormation stack already exists"
@@ -118,9 +123,8 @@ aws iam create-service-linked-role --aws-service-name spot.amazonaws.com 2>/dev/
 print_status "EC2 Spot service-linked role verified"
 
 if [ "$USE_CFN_KARPENTER" = false ]; then
-  # Create KarpenterControllerRole (for IRSA) - only when not using CFN
-  print_info "Creating KarpenterControllerRole for IRSA..."
-  OIDC_PROVIDER=$(aws eks describe-cluster --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --query "cluster.identity.oidc.issuer" --output text | sed -e "s/^https:\/\///")
+  # Create KarpenterControllerRole for Pod Identity - only when not using CFN
+  print_info "Creating KarpenterControllerRole for Pod Identity..."
 
   if aws iam get-role --role-name "KarpenterControllerRole-${CLUSTER_NAME}" &>/dev/null; then
       print_warning "KarpenterControllerRole already exists"
@@ -132,15 +136,12 @@ if [ "$USE_CFN_KARPENTER" = false ]; then
     {
       "Effect": "Allow",
       "Principal": {
-        "Federated": "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:oidc-provider/${OIDC_PROVIDER}"
+        "Service": "pods.eks.amazonaws.com"
       },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "${OIDC_PROVIDER}:aud": "sts.amazonaws.com",
-          "${OIDC_PROVIDER}:sub": "system:serviceaccount:${KARPENTER_NAMESPACE}:karpenter"
-        }
-      }
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
     }
   ]
 }
@@ -207,28 +208,28 @@ export CLUSTER_ENDPOINT=$(aws eks describe-cluster --name ${CLUSTER_NAME} --regi
 print_info "Cluster endpoint: ${CLUSTER_ENDPOINT}"
 
 # Create Pod Identity Association BEFORE helm install (so pods can authenticate on startup)
-if [ "$USE_CFN_KARPENTER" = true ]; then
-  EXISTING_KARPENTER_ASSOC=$(aws eks list-pod-identity-associations \
+EXISTING_KARPENTER_ASSOC=$(aws eks list-pod-identity-associations \
+  --cluster-name "$CLUSTER_NAME" \
+  --region "$AWS_DEFAULT_REGION" \
+  --namespace "${KARPENTER_NAMESPACE}" \
+  --service-account karpenter \
+  --query 'associations[0].associationId' \
+  --output text 2>/dev/null || echo "")
+
+if [ -n "$EXISTING_KARPENTER_ASSOC" ] && [ "$EXISTING_KARPENTER_ASSOC" != "None" ]; then
+  print_warning "Karpenter Pod Identity association already exists: $EXISTING_KARPENTER_ASSOC"
+else
+  print_info "Creating Pod Identity association for Karpenter..."
+  aws eks create-pod-identity-association \
     --cluster-name "$CLUSTER_NAME" \
-    --region "$AWS_DEFAULT_REGION" \
     --namespace "${KARPENTER_NAMESPACE}" \
     --service-account karpenter \
-    --query 'associations[0].associationId' \
-    --output text 2>/dev/null || echo "")
-
-  if [ -n "$EXISTING_KARPENTER_ASSOC" ] && [ "$EXISTING_KARPENTER_ASSOC" != "None" ]; then
-    print_warning "Karpenter Pod Identity association already exists: $EXISTING_KARPENTER_ASSOC"
-  else
-    print_info "Creating Pod Identity association for Karpenter..."
-    aws eks create-pod-identity-association \
-      --cluster-name "$CLUSTER_NAME" \
-      --namespace "${KARPENTER_NAMESPACE}" \
-      --service-account karpenter \
-      --role-arn "$KARPENTER_CONTROLLER_ROLE_ARN" \
-      --region "$AWS_DEFAULT_REGION"
-    print_status "Karpenter Pod Identity association created"
-  fi
+    --role-arn "$KARPENTER_CONTROLLER_ROLE_ARN" \
+    --region "$AWS_DEFAULT_REGION"
+  print_status "Karpenter Pod Identity association created"
 fi
+
+sleep 5
 
 # Logout of helm registry to perform an unauthenticated pull
 helm registry logout public.ecr.aws 2>/dev/null || true
@@ -244,7 +245,7 @@ helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter \
   --set controller.resources.requests.memory=1Gi \
   --set controller.resources.limits.cpu=1 \
   --set controller.resources.limits.memory=1Gi \
-  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_CONTROLLER_ROLE_ARN}" \
+  --set serviceAccount.create=true \
   --wait --timeout 5m
 
 print_status "Karpenter installed successfully"
@@ -298,32 +299,7 @@ echo -e "${BLUE}  Creating Test Workload${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-cat <<EOF | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-karpenter-standard
-  namespace: default
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: test-karpenter-standard
-  template:
-    metadata:
-      labels:
-        app: test-karpenter-standard
-    spec:
-      nodeSelector:
-        workload-type: standard
-      containers:
-      - name: pause
-        image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
-        resources:
-          requests:
-            cpu: 1000m
-            memory: 2Gi
-EOF
+kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/test-karpenter-deployment.yaml"
 
 print_status "Test deployment created (2 replicas, 1 CPU + 2Gi each)"
 echo ""

@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openclaw-provisioning-ingress
+  namespace: openclaw-provisioning
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/subnets: ${PUBLIC_SUBNETS}
+    alb.ingress.kubernetes.io/security-groups: ${CLOUDFRONT_SG_ID},${ALB_MANAGED_SG}
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/success-codes: "200"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+  labels:
+    app: openclaw-provisioning
+spec:
+  ingressClassName: alb
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: openclaw-provisioning
+            port:
+              number: 80

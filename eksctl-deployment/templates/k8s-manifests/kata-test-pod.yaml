@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kata-test-verify
+  namespace: default
+spec:
+  runtimeClassName: kata-fc
+  containers:
+  - name: test
+    image: busybox:latest
+    command: ["sh", "-c", "uname -r && sleep 30"]
+  restartPolicy: Never
+  tolerations:
+  - key: kata-dedicated
+    operator: Exists
+    effect: NoSchedule
