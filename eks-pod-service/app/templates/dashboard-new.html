@@ -457,74 +457,6 @@
             flex: 1;
         }
 
-        /* Runtime Selector */
-        .runtime-selector {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .runtime-selector > label {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.15em;
-            color: var(--text-muted);
-            font-weight: 600;
-        }
-
-        .runtime-options {
-            display: flex;
-            background: rgba(10, 14, 26, 0.8);
-            border: 1px solid rgba(139, 147, 167, 0.3);
-            border-radius: 10px;
-            padding: 3px;
-            gap: 2px;
-        }
-
-        .runtime-option {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 8px;
-            background: transparent;
-            color: var(--text-muted);
-            font-family: 'DM Sans', sans-serif;
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            white-space: nowrap;
-        }
-
-        .runtime-option:hover:not(.active) {
-            color: var(--text-primary);
-            background: rgba(139, 147, 167, 0.1);
-        }
-
-        .runtime-option.active[data-runtime="runc"] {
-            background: rgba(0, 212, 255, 0.2);
-            color: var(--cyber-cyan);
-            border: 1px solid rgba(0, 212, 255, 0.4);
-            box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
-        }
-
-        .runtime-option.active[data-runtime="kata-qemu"] {
-            background: rgba(255, 107, 53, 0.2);
-            color: var(--plasma-orange);
-            border: 1px solid rgba(255, 107, 53, 0.4);
-            box-shadow: 0 0 12px rgba(255, 107, 53, 0.15);
-        }
-
-        .runtime-icon {
-            font-size: 1rem;
-        }
-
-        .runtime-label {
-            font-size: 0.85rem;
-        }
 
         /* Runtime Badge (in instance details) */
         .runtime-badge {
@@ -550,13 +482,103 @@
             border: 1px solid rgba(255, 107, 53, 0.3);
         }
 
-        /* Provider selector (reuses runtime-selector styles) */
-        .provider-option {
+        /* ── Create Instance Modal ── */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+        }
+
+        .modal-backdrop.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-card {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.95);
+            width: 520px;
+            max-width: calc(100vw - 40px);
+            max-height: calc(100vh - 80px);
+            overflow-y: auto;
+            background: linear-gradient(160deg, #181d2e 0%, #151925 100%);
+            border: 1px solid rgba(139, 147, 167, 0.18);
+            border-radius: 20px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
+            z-index: 1001;
+            opacity: 0;
+            transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+        }
+
+        .modal-backdrop.open .modal-card {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
+        }
+
+        .modal-header {
+            padding: 28px 32px 0;
+        }
+
+        .modal-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.35rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+        }
+
+        .modal-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        .modal-body {
+            padding: 24px 32px 8px;
+        }
+
+        .modal-section {
+            margin-bottom: 24px;
+        }
+
+        .modal-section-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        /* Toggle button group (used for provider + runtime in modal) */
+        .modal-toggle-group {
+            display: flex;
+            background: rgba(10, 14, 26, 0.8);
+            border: 1px solid rgba(139, 147, 167, 0.2);
+            border-radius: 10px;
+            padding: 3px;
+            gap: 2px;
+        }
+
+        .modal-toggle-btn {
+            flex: 1;
             display: flex;
             align-items: center;
-            gap: 6px;
-            padding: 8px 16px;
-            border: none;
+            justify-content: center;
+            gap: 7px;
+            padding: 9px 16px;
+            border: 1px solid transparent;
             border-radius: 8px;
             background: transparent;
             color: var(--text-muted);
@@ -564,137 +586,236 @@
             font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.25s ease;
+            transition: all 0.22s ease;
             white-space: nowrap;
         }
 
-        .provider-option:hover:not(.active) {
+        .modal-toggle-btn:hover:not(.active) {
             color: var(--text-primary);
-            background: rgba(139, 147, 167, 0.1);
+            background: rgba(139, 147, 167, 0.08);
         }
 
-        .provider-option.active[data-provider="bedrock"] {
-            background: rgba(0, 212, 255, 0.2);
+        .modal-toggle-btn.active {
+            background: rgba(0, 212, 255, 0.13);
             color: var(--cyber-cyan);
-            border: 1px solid rgba(0, 212, 255, 0.4);
-            box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+            border-color: rgba(0, 212, 255, 0.35);
+            box-shadow: 0 0 12px rgba(0, 212, 255, 0.1);
         }
 
-        .provider-option.active[data-provider="siliconflow"] {
-            background: rgba(255, 107, 53, 0.2);
+        .modal-toggle-btn.active.accent-orange {
+            background: rgba(255, 107, 53, 0.13);
             color: var(--plasma-orange);
-            border: 1px solid rgba(255, 107, 53, 0.4);
-            box-shadow: 0 0 12px rgba(255, 107, 53, 0.15);
+            border-color: rgba(255, 107, 53, 0.35);
+            box-shadow: 0 0 12px rgba(255, 107, 53, 0.1);
         }
 
-        /* Model selector dropdown */
-        .model-selector {
+        /* API Key inline input in modal */
+        .modal-apikey-row {
+            margin-top: 10px;
+            overflow: hidden;
+            max-height: 0;
+            opacity: 0;
+            transition: max-height 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease;
+        }
+
+        .modal-apikey-row.visible {
+            max-height: 60px;
+            opacity: 1;
+        }
+
+        .modal-apikey-input {
+            width: 100%;
+            background: rgba(10, 14, 26, 0.8);
+            border: 1px solid rgba(139, 147, 167, 0.25);
+            border-radius: 10px;
+            padding: 10px 14px;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .modal-apikey-input::placeholder {
+            color: rgba(139, 147, 167, 0.5);
+        }
+
+        .modal-apikey-input:focus {
+            border-color: rgba(255, 107, 53, 0.5);
+            box-shadow: 0 0 12px rgba(255, 107, 53, 0.12);
+        }
+
+        /* Model card list */
+        .model-card-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 240px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .model-card-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .model-card-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .model-card-list::-webkit-scrollbar-thumb {
+            background: rgba(139, 147, 167, 0.3);
+            border-radius: 4px;
+        }
+
+        .model-card {
             display: flex;
             align-items: center;
             gap: 12px;
-            transition: opacity 0.3s ease, max-height 0.3s ease;
-            overflow: hidden;
-        }
-
-        .model-selector.hidden {
-            display: none !important;
-        }
-
-        .model-selector > label {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.15em;
-            color: var(--text-muted);
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .model-select {
-            appearance: none;
-            -webkit-appearance: none;
-            background: rgba(10, 14, 26, 0.8);
-            border: 1px solid rgba(139, 147, 167, 0.3);
+            padding: 12px 14px;
+            background: rgba(10, 14, 26, 0.5);
+            border: 1px solid rgba(139, 147, 167, 0.12);
             border-radius: 10px;
-            padding: 10px 40px 10px 16px;
-            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .model-card:hover {
+            background: rgba(10, 14, 26, 0.8);
+            border-color: rgba(139, 147, 167, 0.25);
+        }
+
+        .model-card.selected {
+            background: rgba(0, 212, 255, 0.06);
+            border-color: rgba(0, 212, 255, 0.35);
+            box-shadow: 0 0 16px rgba(0, 212, 255, 0.08);
+        }
+
+        .model-card-radio {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 2px solid rgba(139, 147, 167, 0.35);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .model-card.selected .model-card-radio {
+            border-color: var(--cyber-cyan);
+        }
+
+        .model-card.selected .model-card-radio::after {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--cyber-cyan);
+        }
+
+        .model-card-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .model-card-name {
             font-family: 'DM Sans', sans-serif;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             font-weight: 600;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            min-width: 240px;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1.5l5 5 5-5' stroke='%238b93a7' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 14px center;
-        }
-
-        .model-select:hover {
-            border-color: rgba(0, 212, 255, 0.4);
-        }
-
-        .model-select:focus {
-            outline: none;
-            border-color: rgba(0, 212, 255, 0.6);
-            box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
-        }
-
-        .model-select option {
-            background: var(--void-dark);
             color: var(--text-primary);
-            padding: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        /* API Key input group */
-        .apikey-group {
-            display: flex;
-            align-items: center;
-        }
-
-        .apikey-input-wrapper {
-            display: flex;
-            align-items: center;
-            background: rgba(10, 14, 26, 0.8);
-            border: 1px solid rgba(139, 147, 167, 0.3);
-            border-radius: 10px;
-            padding: 3px;
-            gap: 2px;
-            transition: border-color 0.25s ease;
-        }
-
-        .apikey-input-wrapper:focus-within {
-            border-color: rgba(255, 107, 53, 0.6);
-            box-shadow: 0 0 12px rgba(255, 107, 53, 0.15);
-        }
-
-        .apikey-input {
-            background: transparent;
-            border: none;
-            outline: none;
-            color: var(--text-primary);
+        .model-card-provider {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85rem;
-            padding: 8px 12px;
-            width: 280px;
-        }
-
-        .apikey-input::placeholder {
+            font-size: 0.68rem;
             color: var(--text-muted);
-            font-size: 0.8rem;
+            margin-top: 2px;
         }
 
-        .btn-toggle-key {
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            font-size: 1rem;
-            padding: 6px 10px;
-            border-radius: 6px;
-            transition: background 0.2s;
+        .model-card-default {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.6rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(0, 255, 157, 0.12);
+            color: var(--success);
+            border: 1px solid rgba(0, 255, 157, 0.25);
+            flex-shrink: 0;
         }
 
-        .btn-toggle-key:hover {
-            background: rgba(139, 147, 167, 0.15);
+        .model-card-list-loading {
+            padding: 24px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Modal footer */
+        .modal-footer {
+            padding: 16px 32px 28px;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .modal-footer .btn {
+            min-width: 110px;
+            justify-content: center;
+        }
+
+        .modal-btn-cancel {
+            background: rgba(139, 147, 167, 0.1);
+            color: var(--text-muted);
+            border: 1px solid rgba(139, 147, 167, 0.2);
+        }
+
+        .modal-btn-cancel:hover {
+            background: rgba(139, 147, 167, 0.18);
+            color: var(--text-primary);
+        }
+
+        .modal-btn-create {
+            background: linear-gradient(135deg, var(--plasma-orange), #ff8c61);
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.25);
+            min-width: 160px;
+        }
+
+        .modal-btn-create:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(255, 107, 53, 0.35);
+        }
+
+        .modal-btn-create:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .modal-btn-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        /* Divider */
+        .modal-divider {
+            height: 1px;
+            background: rgba(139, 147, 167, 0.12);
+            margin: 0 32px;
         }
 
         /* WebSocket Controls */
@@ -833,6 +954,18 @@
         }
 
         /* Responsive */
+        @media (max-width: 560px) {
+            .modal-card {
+                width: calc(100vw - 24px);
+                max-height: calc(100vh - 40px);
+                border-radius: 16px;
+            }
+
+            .modal-header, .modal-body { padding-left: 20px; padding-right: 20px; }
+            .modal-footer { padding-left: 20px; padding-right: 20px; }
+            .modal-divider { margin-left: 20px; margin-right: 20px; }
+        }
+
         @media (max-width: 768px) {
             header {
                 flex-direction: column;
@@ -864,9 +997,6 @@
                 padding: 28px;
             }
 
-            .model-select {
-                min-width: 100%;
-            }
         }
     </style>
 
@@ -890,51 +1020,6 @@
 
     <main>
         <div class="actions-bar">
-            <div class="runtime-selector" id="provider-selector">
-                <label>Provider</label>
-                <div class="runtime-options">
-                    <button class="provider-option active" data-provider="bedrock">
-                        <span class="runtime-icon">☁️</span>
-                        <span class="runtime-label">Bedrock</span>
-                    </button>
-                    <button class="provider-option" data-provider="siliconflow">
-                        <span class="runtime-icon">🤖</span>
-                        <span class="runtime-label">SiliconFlow</span>
-                    </button>
-                </div>
-            </div>
-
-            <div class="model-selector" id="model-selector">
-                <label>Model</label>
-                <select id="model-select" class="model-select">
-                    <option>Loading models...</option>
-                </select>
-            </div>
-
-            <div class="apikey-group hidden" id="siliconflow-apikey-group">
-                <div class="apikey-input-wrapper">
-                    <input type="password" id="siliconflow-apikey"
-                           class="apikey-input"
-                           placeholder="Enter your SiliconFlow API Key (sk-...)"
-                           autocomplete="off" />
-                    <button type="button" id="toggle-apikey-btn" class="btn-toggle-key">👁️</button>
-                </div>
-            </div>
-
-            <div class="runtime-selector" id="runtime-selector">
-                <label>Runtime</label>
-                <div class="runtime-options">
-                    <button class="runtime-option active" data-runtime="runc">
-                        <span class="runtime-icon">📦</span>
-                        <span class="runtime-label">Standard</span>
-                    </button>
-                    <button class="runtime-option" data-runtime="kata-qemu">
-                        <span class="runtime-icon">🛡️</span>
-                        <span class="runtime-label">Secure VM</span>
-                    </button>
-                </div>
-            </div>
-
             <button id="create-instance-btn" class="btn btn-primary">
                 <span>➕</span> Create OpenClaw Instance
             </button>
@@ -956,7 +1041,7 @@
                 <div class="empty-icon">📦</div>
                 <h2>No OpenClaw Instance Yet</h2>
                 <p>Get started by creating your first OpenClaw instance</p>
-                <button class="btn btn-primary btn-lg" onclick="document.getElementById('create-instance-btn').click()">
+                <button class="btn btn-primary btn-lg" id="empty-state-create-btn">
                     <span>➕</span> Create Instance
                 </button>
             </div>
@@ -1037,6 +1122,56 @@
                             <span>🗑️</span> Delete Instance
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+        <!-- Create Instance Modal -->
+        <div class="modal-backdrop" id="create-modal">
+            <div class="modal-card" onclick="event.stopPropagation()">
+                <div class="modal-header">
+                    <div class="modal-title">🦞 Create OpenClaw Instance</div>
+                    <div class="modal-subtitle">Configure your instance before launching</div>
+                </div>
+
+                <div class="modal-body">
+                    <!-- Provider Section -->
+                    <div class="modal-section">
+                        <div class="modal-section-label">Provider</div>
+                        <div class="modal-toggle-group" id="modal-provider-group">
+                            <button class="modal-toggle-btn active" data-provider="bedrock">☁️ Bedrock</button>
+                            <button class="modal-toggle-btn" data-provider="siliconflow">🤖 SiliconFlow</button>
+                        </div>
+                        <div class="modal-apikey-row" id="modal-apikey-row">
+                            <input type="password" class="modal-apikey-input" id="modal-apikey"
+                                   placeholder="SiliconFlow API Key (sk-...)" autocomplete="off" />
+                        </div>
+                    </div>
+
+                    <div class="modal-divider"></div>
+
+                    <!-- Model Section -->
+                    <div class="modal-section" style="margin-top:24px">
+                        <div class="modal-section-label">Model</div>
+                        <div class="model-card-list" id="modal-model-list">
+                            <div class="model-card-list-loading">Loading models...</div>
+                        </div>
+                    </div>
+
+                    <div class="modal-divider"></div>
+
+                    <!-- Runtime Section -->
+                    <div class="modal-section" style="margin-top:24px">
+                        <div class="modal-section-label">Runtime</div>
+                        <div class="modal-toggle-group" id="modal-runtime-group">
+                            <button class="modal-toggle-btn active" data-runtime="runc">📦 Standard</button>
+                            <button class="modal-toggle-btn" data-runtime="kata-qemu">🛡️ Secure VM</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn modal-btn-cancel" id="modal-cancel-btn">Cancel</button>
+                    <button class="btn modal-btn-create" id="modal-create-btn">Create Instance</button>
                 </div>
             </div>
         </div>

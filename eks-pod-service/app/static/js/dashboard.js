@@ -164,6 +164,11 @@ const Dashboard = {
                 setTimeout(() => window.location.href = loginPath, 2000);
             });
     },
+    // Modal state
+    modalSelectedProvider: 'bedrock',
+    modalSelectedModel: null,
+    modalSelectedRuntime: 'runc',
+
     // Setup event listeners
     setupEventListeners() {
         // Logout button
@@ -171,10 +176,16 @@ const Dashboard = {
             this.handleLogout();
         });
 
-        // Create instance button
+        // Create instance button → open modal
         document.getElementById('create-instance-btn').addEventListener('click', () => {
-            this.handleCreateInstance();
+            this.openCreateModal();
         });
+
+        // Empty-state CTA also opens modal
+        const emptyStateBtn = document.getElementById('empty-state-create-btn');
+        if (emptyStateBtn) {
+            emptyStateBtn.addEventListener('click', () => this.openCreateModal());
+        }
 
         // Refresh button
         document.getElementById('refresh-btn').addEventListener('click', () => {
@@ -199,79 +210,175 @@ const Dashboard = {
             });
         }
 
-        // Runtime selector toggle
-        document.querySelectorAll('.runtime-option').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.runtime-option').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            });
+        // ── Modal wiring ──
+        const modal = document.getElementById('create-modal');
+
+        // Backdrop click → close
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) this.closeCreateModal();
         });
 
-        // Provider selector toggle
-        document.querySelectorAll('.provider-option').forEach(btn => {
+        // Escape key → close
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.classList.contains('open')) this.closeCreateModal();
+        });
+
+        // Cancel button
+        document.getElementById('modal-cancel-btn').addEventListener('click', () => {
+            this.closeCreateModal();
+        });
+
+        // Create button
+        document.getElementById('modal-create-btn').addEventListener('click', () => {
+            this.handleCreateInstance();
+        });
+
+        // Provider toggle
+        document.querySelectorAll('#modal-provider-group .modal-toggle-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.provider-option').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('#modal-provider-group .modal-toggle-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                // Show/hide API key input
-                const apiKeyGroup = document.getElementById('siliconflow-apikey-group');
+                if (btn.dataset.provider === 'siliconflow') btn.classList.add('accent-orange');
+                this.modalSelectedProvider = btn.dataset.provider;
+                // Show/hide API key
+                const row = document.getElementById('modal-apikey-row');
                 if (btn.dataset.provider === 'siliconflow') {
-                    apiKeyGroup.classList.remove('hidden');
+                    row.classList.add('visible');
                 } else {
-                    apiKeyGroup.classList.add('hidden');
+                    row.classList.remove('visible');
                 }
-                // Repopulate model dropdown for the selected provider
-                this.populateModelSelect(btn.dataset.provider);
+                // Re-render model cards
+                this.populateModelCards(btn.dataset.provider);
             });
         });
 
-        // API key show/hide toggle
-        const toggleKeyBtn = document.getElementById('toggle-apikey-btn');
-        if (toggleKeyBtn) {
-            toggleKeyBtn.addEventListener('click', () => {
-                const input = document.getElementById('siliconflow-apikey');
-                if (input.type === 'password') {
-                    input.type = 'text';
-                    toggleKeyBtn.textContent = '🙈';
-                } else {
-                    input.type = 'password';
-                    toggleKeyBtn.textContent = '👁️';
-                }
+        // Runtime toggle
+        document.querySelectorAll('#modal-runtime-group .modal-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#modal-runtime-group .modal-toggle-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if (btn.dataset.runtime === 'kata-qemu') btn.classList.add('accent-orange');
+                this.modalSelectedRuntime = btn.dataset.runtime;
             });
+        });
+    },
+
+    // Open the create-instance modal
+    openCreateModal() {
+        if (this.currentInstance) {
+            this.showError('You already have an instance. Please delete it first.');
+            return;
         }
+        // Reset modal state
+        this.modalSelectedProvider = 'bedrock';
+        this.modalSelectedRuntime = 'runc';
+        this.modalSelectedModel = null;
+
+        // Reset provider toggle
+        document.querySelectorAll('#modal-provider-group .modal-toggle-btn').forEach(b => {
+            b.classList.remove('active', 'accent-orange');
+        });
+        document.querySelector('#modal-provider-group [data-provider="bedrock"]').classList.add('active');
+
+        // Reset runtime toggle
+        document.querySelectorAll('#modal-runtime-group .modal-toggle-btn').forEach(b => {
+            b.classList.remove('active', 'accent-orange');
+        });
+        document.querySelector('#modal-runtime-group [data-runtime="runc"]').classList.add('active');
+
+        // Hide API key row and clear value
+        document.getElementById('modal-apikey-row').classList.remove('visible');
+        document.getElementById('modal-apikey').value = '';
+
+        // Reset create button
+        const createBtn = document.getElementById('modal-create-btn');
+        createBtn.disabled = false;
+        createBtn.innerHTML = 'Create Instance';
+
+        // Populate model cards
+        this.populateModelCards('bedrock');
+
+        // Show modal
+        document.getElementById('create-modal').classList.add('open');
+    },
+
+    // Close the modal
+    closeCreateModal() {
+        document.getElementById('create-modal').classList.remove('open');
     },
 
     // All models keyed by provider
     allModels: {},
 
-    // Load available models and populate dropdown
+    // Load available models
     async loadModels() {
         try {
             const data = await API.getModels();
             if (!data.bedrock && !data.siliconflow) return;
-
             this.allModels = data;
-            // Populate dropdown for the currently active provider
-            const activeProvider = document.querySelector('.provider-option.active')?.dataset.provider || 'bedrock';
-            this.populateModelSelect(activeProvider);
         } catch (error) {
             console.error('Failed to load models:', error);
         }
     },
 
-    // Populate model dropdown for a given provider
-    populateModelSelect(provider) {
-        const select = document.getElementById('model-select');
-        if (!select) return;
+    // Render model cards for a given provider inside the modal
+    populateModelCards(provider) {
+        const list = document.getElementById('modal-model-list');
+        if (!list) return;
 
         const models = this.allModels[provider] || [];
-        select.innerHTML = '';
+        if (models.length === 0) {
+            list.innerHTML = '<div class="model-card-list-loading">Loading models...</div>';
+            this.modalSelectedModel = null;
+            return;
+        }
+
+        list.innerHTML = '';
+        let defaultId = null;
+
         models.forEach(model => {
-            const option = document.createElement('option');
-            option.value = model.id;
-            option.textContent = `${model.name}  —  ${model.provider_label}`;
-            if (model.default) option.selected = true;
-            select.appendChild(option);
+            const card = document.createElement('div');
+            card.className = 'model-card';
+            card.dataset.modelId = model.id;
+
+            const isDefault = !!model.default;
+            if (isDefault) defaultId = model.id;
+
+            card.innerHTML =
+                '<div class="model-card-radio"></div>' +
+                '<div class="model-card-info">' +
+                    '<div class="model-card-name">' + this.escapeHtml(model.name) + '</div>' +
+                    '<div class="model-card-provider">' + this.escapeHtml(model.provider_label) + '</div>' +
+                '</div>' +
+                (isDefault ? '<span class="model-card-default">Default</span>' : '');
+
+            card.addEventListener('click', () => {
+                list.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                this.modalSelectedModel = model.id;
+            });
+
+            list.appendChild(card);
         });
+
+        // Pre-select default model
+        if (defaultId) {
+            const defaultCard = list.querySelector(`[data-model-id="${CSS.escape(defaultId)}"]`);
+            if (defaultCard) {
+                defaultCard.classList.add('selected');
+                this.modalSelectedModel = defaultId;
+            }
+        } else if (models.length > 0) {
+            list.firstChild.classList.add('selected');
+            this.modalSelectedModel = models[0].id;
+        }
+    },
+
+    // Escape HTML helper
+    escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     },
 
     // Handle logout
@@ -428,35 +535,22 @@ const Dashboard = {
         document.getElementById('create-instance-btn').disabled = true;
     },
 
-    // Handle create instance
+    // Handle create instance (called from modal Create button)
     async handleCreateInstance() {
         if (this.currentInstance) {
             this.showError('You already have an instance. Please delete it first.');
+            this.closeCreateModal();
             return;
         }
 
-        // Get selected runtime
-        const selectedRuntime = document.querySelector('.runtime-option.active')?.dataset.runtime || 'runc';
-        const runtimeLabel = selectedRuntime === 'kata-qemu' ? 'Secure VM (Kata)' : 'Standard';
-        const storageLabel = selectedRuntime === 'kata-qemu' ? 'EBS (gp3)' : 'EFS (elastic)';
-
-        // Get selected provider
-        const selectedProvider = document.querySelector('.provider-option.active')?.dataset.provider || 'bedrock';
-        const providerLabel = selectedProvider === 'siliconflow' ? 'SiliconFlow' : 'Bedrock';
-
-        // Get selected model
-        let selectedModel = null;
-        let modelLabel = '';
-        const modelSelect = document.getElementById('model-select');
-        if (modelSelect && modelSelect.value) {
-            selectedModel = modelSelect.value;
-            modelLabel = modelSelect.options[modelSelect.selectedIndex]?.textContent || selectedModel;
-        }
+        const selectedProvider = this.modalSelectedProvider;
+        const selectedModel = this.modalSelectedModel;
+        const selectedRuntime = this.modalSelectedRuntime;
 
         // Validate SiliconFlow API key
         let siliconflowApiKey = null;
         if (selectedProvider === 'siliconflow') {
-            siliconflowApiKey = document.getElementById('siliconflow-apikey')?.value?.trim();
+            siliconflowApiKey = document.getElementById('modal-apikey')?.value?.trim();
             if (!siliconflowApiKey) {
                 this.showError('Please enter your SiliconFlow API key.');
                 return;
@@ -467,21 +561,20 @@ const Dashboard = {
             }
         }
 
-        const modelInfo = selectedModel ? `\nModel: ${modelLabel}` : '';
-        if (!confirm(`Create a new OpenClaw instance?\n\nProvider: ${providerLabel}${modelInfo}\nRuntime: ${runtimeLabel}\nStorage: ${storageLabel}\n\nThis may take a few minutes.`)) {
-            return;
-        }
-
-        const createBtn = document.getElementById('create-instance-btn');
-        createBtn.disabled = true;
-        createBtn.innerHTML = '<span>⏳</span> Creating...';
+        // Show spinner on modal create button
+        const modalCreateBtn = document.getElementById('modal-create-btn');
+        modalCreateBtn.disabled = true;
+        modalCreateBtn.innerHTML = '<span class="modal-btn-spinner"></span> Creating...';
         this.hideError();
 
         try {
             const result = await API.createInstance(selectedRuntime, selectedProvider, siliconflowApiKey, selectedModel);
             console.log('Instance created:', result);
 
-            // Show success state
+            // Close modal and show success
+            this.closeCreateModal();
+            const createBtn = document.getElementById('create-instance-btn');
+            createBtn.disabled = true;
             createBtn.innerHTML = '<span>✓</span> Created';
             this.showSuccess('Instance created successfully! Loading...');
 
@@ -490,8 +583,8 @@ const Dashboard = {
         } catch (error) {
             console.error('Failed to create instance:', error);
             this.showError(`Failed to create instance: ${error.message}`);
-            createBtn.disabled = false;
-            createBtn.innerHTML = '<span>➕</span> Create OpenClaw Instance';
+            modalCreateBtn.disabled = false;
+            modalCreateBtn.innerHTML = 'Create Instance';
         }
     },
 
