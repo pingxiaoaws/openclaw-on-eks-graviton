@@ -183,8 +183,8 @@ def upgrade_plan():
 
         cursor.execute('''
             UPDATE users
-            SET plan = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE email = ?
+            SET plan = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE email = %s
         ''', (new_plan, user_email))
 
         conn.commit()
@@ -209,7 +209,7 @@ def upgrade_plan():
 @require_auth
 def get_hourly_usage():
     """
-    Get hourly usage time series for current user
+    Get hourly usage time series for current user (from usage_events)
 
     Query params:
         hours: Number of hours to look back (default: 24)
@@ -228,41 +228,39 @@ def get_hourly_usage():
         }
     """
     try:
-        # Get query params
         hours = request.args.get('hours', 24, type=int)
-        if hours < 1 or hours > 168:  # Max 1 week
+        if hours < 1 or hours > 168:
             return jsonify({"error": "Invalid hours parameter (must be 1-168)"}), 400
 
-        # Get user ID
         user_email = session['user_email']
         user_id = generate_user_id(user_email)
 
-        # Query hourly_usage table
         conn = get_db_connection()
         cursor = conn.cursor()
 
         cursor.execute('''
             SELECT
-                hour,
+                DATE_TRUNC('hour', timestamp) as hour,
                 SUM(total_tokens) as total_tokens,
-                SUM(estimated_cost) as estimated_cost,
-                SUM(call_count) as call_count
-            FROM hourly_usage
-            WHERE user_id = ? AND hour >= datetime('now', ? || ' hours')
-            GROUP BY hour
+                SUM(cost_usd) as total_cost,
+                COUNT(*) as call_count
+            FROM usage_events
+            WHERE tenant_id = %s AND timestamp >= NOW() - INTERVAL '%s hours'
+            GROUP BY DATE_TRUNC('hour', timestamp)
             ORDER BY hour ASC
-        ''', (user_id, -hours))
+        ''', (user_id, hours))
 
         hourly_data = [
             {
-                'hour': row[0],
-                'total_tokens': row[1],
-                'estimated_cost': round(row[2], 4),
-                'call_count': row[3]
+                'hour': str(row[0]),
+                'total_tokens': int(row[1]),
+                'estimated_cost': round(float(row[2]), 4),
+                'call_count': int(row[3])
             }
             for row in cursor.fetchall()
         ]
 
+        cursor.close()
         conn.close()
 
         return jsonify({

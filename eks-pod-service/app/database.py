@@ -45,33 +45,35 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)
     ''')
 
-    # Create usage_events table (for Phase 1 billing - future use)
+    # Create usage_events table (populated by billing sidecar)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usage_events (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            user_email TEXT NOT NULL,
-            model TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            input_tokens INTEGER DEFAULT 0,
-            output_tokens INTEGER DEFAULT 0,
-            cache_read INTEGER DEFAULT 0,
-            cache_write INTEGER DEFAULT 0,
-            total_tokens INTEGER DEFAULT 0,
-            timestamp BIGINT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_email) REFERENCES users(email)
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            tenant_id     TEXT          NOT NULL,
+            message_id    TEXT          NOT NULL,
+            session_id    TEXT,
+            timestamp     TIMESTAMPTZ   NOT NULL,
+            provider      TEXT          NOT NULL,
+            model         TEXT          NOT NULL,
+            input_tokens  INT           NOT NULL DEFAULT 0,
+            output_tokens INT           NOT NULL DEFAULT 0,
+            cache_read    INT           NOT NULL DEFAULT 0,
+            cache_write   INT           NOT NULL DEFAULT 0,
+            total_tokens  INT           NOT NULL DEFAULT 0,
+            cost_usd      NUMERIC(12,6) NOT NULL DEFAULT 0,
+            created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+            UNIQUE (tenant_id, message_id)
         )
     ''')
 
     cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_usage_events_user_timestamp
-        ON usage_events(user_id, timestamp)
+        CREATE INDEX IF NOT EXISTS idx_usage_tenant_ts
+        ON usage_events(tenant_id, timestamp)
     ''')
 
     cursor.execute('''
-        CREATE INDEX IF NOT EXISTS idx_usage_events_created
-        ON usage_events(created_at)
+        CREATE INDEX IF NOT EXISTS idx_usage_model_ts
+        ON usage_events(model, timestamp)
     ''')
 
     # Create hourly_usage table (aggregated by hour)
@@ -212,31 +214,34 @@ def create_user(username: str, email: str, password_hash: str) -> int:
     return user_id
 
 def insert_usage_event(event: dict) -> int:
-    """Insert a usage event into the database"""
+    """Insert a usage event into the database (legacy - used by UsageCollector)"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute('''
         INSERT INTO usage_events (
-            user_id, user_email, model, provider,
+            tenant_id, message_id, session_id, timestamp,
+            provider, model,
             input_tokens, output_tokens, cache_read, cache_write, total_tokens,
-            timestamp
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            cost_usd
+        ) VALUES (%s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, 0)
+        ON CONFLICT (tenant_id, message_id) DO NOTHING
         RETURNING id
     ''', (
         event['user_id'],
-        event['user_email'],
-        event['model'],
+        event.get('message_id', str(event.get('timestamp', ''))),
+        event.get('session_id', ''),
         event['provider'],
+        event['model'],
         event['input_tokens'],
         event['output_tokens'],
         event['cache_read'],
         event['cache_write'],
         event['total_tokens'],
-        event['timestamp']
     ))
 
-    event_id = cursor.fetchone()[0]
+    row = cursor.fetchone()
+    event_id = row[0] if row else 0
     conn.commit()
     cursor.close()
     conn.close()
@@ -245,32 +250,29 @@ def insert_usage_event(event: dict) -> int:
 
 def get_user_usage_summary(user_id: str, days: int = 30) -> dict:
     """
-    Get usage summary for a user over the last N days
+    Get usage summary for a user over the last N days.
+    Queries usage_events directly (populated by billing sidecar).
 
     Returns:
         {
-            'total_tokens': int,
-            'input_tokens': int,
-            'output_tokens': int,
-            'total_calls': int,
-            'estimated_cost': float,
-            'by_model': [{'provider': str, 'model': str, 'total_tokens': int, 'estimated_cost': float}, ...],
-            'daily': [{'date': str, 'total_tokens': int, 'estimated_cost': float}, ...]
+            'summary': {'total_tokens': int, 'input_tokens': int, ...},
+            'by_model': [...],
+            'daily': [...]
         }
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Overall summary
+    # Overall summary from usage_events
     cursor.execute('''
         SELECT
             COALESCE(SUM(total_tokens), 0) as total_tokens,
             COALESCE(SUM(input_tokens), 0) as input_tokens,
             COALESCE(SUM(output_tokens), 0) as output_tokens,
-            COALESCE(SUM(call_count), 0) as total_calls,
-            COALESCE(SUM(estimated_cost), 0.0) as estimated_cost
-        FROM daily_usage
-        WHERE user_id = %s AND date >= CURRENT_DATE - INTERVAL '%s days'
+            COUNT(*) as total_calls,
+            COALESCE(SUM(cost_usd), 0.0) as total_cost
+        FROM usage_events
+        WHERE tenant_id = %s AND timestamp >= NOW() - INTERVAL '%s days'
     ''', (user_id, days))
 
     summary_row = cursor.fetchone()
@@ -288,9 +290,9 @@ def get_user_usage_summary(user_id: str, days: int = 30) -> dict:
             provider,
             model,
             SUM(total_tokens) as total_tokens,
-            SUM(estimated_cost) as estimated_cost
-        FROM daily_usage
-        WHERE user_id = %s AND date >= CURRENT_DATE - INTERVAL '%s days'
+            SUM(cost_usd) as total_cost
+        FROM usage_events
+        WHERE tenant_id = %s AND timestamp >= NOW() - INTERVAL '%s days'
         GROUP BY provider, model
         ORDER BY total_tokens DESC
     ''', (user_id, days))
@@ -308,13 +310,13 @@ def get_user_usage_summary(user_id: str, days: int = 30) -> dict:
     # Daily breakdown
     cursor.execute('''
         SELECT
-            date,
+            DATE(timestamp) as day,
             SUM(total_tokens) as total_tokens,
-            SUM(estimated_cost) as estimated_cost
-        FROM daily_usage
-        WHERE user_id = %s AND date >= CURRENT_DATE - INTERVAL '%s days'
-        GROUP BY date
-        ORDER BY date ASC
+            SUM(cost_usd) as total_cost
+        FROM usage_events
+        WHERE tenant_id = %s AND timestamp >= NOW() - INTERVAL '%s days'
+        GROUP BY DATE(timestamp)
+        ORDER BY day ASC
     ''', (user_id, days))
 
     daily = [
@@ -337,26 +339,26 @@ def get_user_usage_summary(user_id: str, days: int = 30) -> dict:
 
 def get_all_users_with_usage(days: int = 30) -> list:
     """
-    Get all users with their usage stats (admin only)
+    Get all users with their usage stats (admin only).
+    Queries usage_events directly.
 
     Returns:
-        [{'user_id': str, 'email': str, 'username': str, 'created_at': str,
+        [{'email': str, 'username': str, 'created_at': str,
           'usage_30d': {'total_tokens': int, 'estimated_cost': float}}, ...]
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Get all users with their usage
     cursor.execute('''
         SELECT
             u.email,
             u.username,
             u.created_at,
-            COALESCE(SUM(d.total_tokens), 0) as total_tokens,
-            COALESCE(SUM(d.estimated_cost), 0.0) as estimated_cost
+            COALESCE(SUM(e.total_tokens), 0) as total_tokens,
+            COALESCE(SUM(e.cost_usd), 0.0) as estimated_cost
         FROM users u
-        LEFT JOIN daily_usage d ON u.email = d.user_email
-            AND d.date >= CURRENT_DATE - INTERVAL '%s days'
+        LEFT JOIN usage_events e ON u.email = e.tenant_id
+            AND e.timestamp >= NOW() - INTERVAL '%s days'
         GROUP BY u.email, u.username, u.created_at
         ORDER BY u.created_at DESC
     ''', (days,))
@@ -385,7 +387,7 @@ def cleanup_old_usage_events(days: int = 7):
 
     cursor.execute('''
         DELETE FROM usage_events
-        WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '%s days'
+        WHERE timestamp < NOW() - INTERVAL '%s days'
     ''', (days,))
 
     deleted_count = cursor.rowcount

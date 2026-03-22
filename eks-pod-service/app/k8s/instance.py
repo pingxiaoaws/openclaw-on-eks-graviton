@@ -3,6 +3,7 @@ from app.config import Config
 from datetime import datetime
 import logging
 import copy
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +186,39 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             "enabled": True
         }
         logger.info(f"✅ Added AWS_REGION={Config.AWS_REGION} and enabled selfConfigure for Bedrock Pod Identity")
+
+    # Add billing sidecar if enabled and image is configured
+    if Config.BILLING_SIDECAR_ENABLED and Config.BILLING_SIDECAR_IMAGE:
+        db_host = os.environ.get('POSTGRES_HOST', 'postgres.openclaw-provisioning.svc')
+        db_port = os.environ.get('POSTGRES_PORT', '5432')
+        db_name = os.environ.get('POSTGRES_DB', 'openclaw')
+        db_user = os.environ.get('POSTGRES_USER', 'openclaw')
+        db_pass = os.environ.get('POSTGRES_PASSWORD', 'OpenClaw2026!SecureDB')
+        database_url = f"postgres://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+
+        billing_sidecar = {
+            "name": "billing-sidecar",
+            "image": Config.BILLING_SIDECAR_IMAGE,
+            "env": [
+                {"name": "TENANT_ID", "value": user_id},
+                {"name": "DATABASE_URL", "value": database_url},
+                {"name": "OPENCLAW_SESSIONS_DIR", "value": "/home/openclaw/.openclaw/agents"},
+                {"name": "POLL_INTERVAL", "value": "5"},
+            ],
+            "volumeMounts": [
+                {
+                    "name": "data",
+                    "mountPath": "/home/openclaw/.openclaw",
+                    "readOnly": True,
+                }
+            ],
+            "resources": {
+                "requests": {"cpu": "10m", "memory": "32Mi"},
+                "limits": {"cpu": "50m", "memory": "64Mi"},
+            },
+        }
+        instance_body["spec"].setdefault("sidecars", []).append(billing_sidecar)
+        logger.info(f"✅ Billing sidecar injected for user {user_id}")
 
     # Add cognito_sub if provided
     if cognito_sub:
