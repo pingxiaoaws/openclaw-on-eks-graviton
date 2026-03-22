@@ -189,7 +189,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
 
     # Add billing sidecar if enabled and image is configured
     if Config.BILLING_SIDECAR_ENABLED and Config.BILLING_SIDECAR_IMAGE:
-        db_host = os.environ.get('POSTGRES_HOST', 'postgres.openclaw-provisioning.svc')
+        db_host = 'postgres.openclaw-provisioning.svc'
         db_port = os.environ.get('POSTGRES_PORT', '5432')
         db_name = os.environ.get('POSTGRES_DB', 'openclaw')
         db_user = os.environ.get('POSTGRES_USER', 'openclaw')
