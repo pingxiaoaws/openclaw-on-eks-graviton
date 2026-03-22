@@ -152,36 +152,34 @@ else
     echo ""
 fi
 
-# Step 6: Set billing sidecar env var on deployment
+# Step 6: Set billing sidecar env var on deployment (skip if deployment doesn't exist yet)
 echo -e "${YELLOW}Step 6/8: Setting billing sidecar image on deployment${NC}"
 BILLING_SIDECAR_IMAGE="${BILLING_SIDECAR_IMAGE:-$ECR_REGISTRY/$BILLING_SIDECAR_REPO:$IMAGE_TAG}"
-kubectl set env deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE" \
-  BILLING_SIDECAR_IMAGE="$BILLING_SIDECAR_IMAGE"
-if [ $? -eq 0 ]; then
+if kubectl get deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE" &>/dev/null; then
+    kubectl set env deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE" \
+      BILLING_SIDECAR_IMAGE="$BILLING_SIDECAR_IMAGE"
     echo -e "${GREEN}✅ Billing sidecar image env var set${NC}"
 else
-    echo -e "${RED}❌ Failed to set billing sidecar env var${NC}"
-    exit 1
+    echo -e "${YELLOW}⚠️  Deployment not found yet (will be configured during deploy script). Skipping.${NC}"
 fi
 echo ""
 
-# Step 7: Restart K8s deployment (works from both local and remote)
+# Step 7: Restart K8s deployment (skip if deployment doesn't exist yet)
 echo -e "${YELLOW}Step 7/8: Restarting Kubernetes deployment${NC}"
-kubectl rollout restart deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE"
-if [ $? -eq 0 ]; then
+if kubectl get deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE" &>/dev/null; then
+    kubectl rollout restart deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE"
     echo -e "${GREEN}✅ Rollout initiated${NC}"
-else
-    echo -e "${RED}❌ Failed to restart deployment${NC}"
-    exit 1
-fi
 
-echo "   Waiting for rollout to complete (max 3 minutes)..."
-kubectl rollout status deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE" --timeout=3m
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✅ Deployment rolled out successfully${NC}"
+    echo "   Waiting for rollout to complete (max 3 minutes)..."
+    kubectl rollout status deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE" --timeout=3m
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Deployment rolled out successfully${NC}"
+    else
+        echo -e "${RED}❌ Rollout failed or timed out${NC}"
+        exit 1
+    fi
 else
-    echo -e "${RED}❌ Rollout failed or timed out${NC}"
-    exit 1
+    echo -e "${YELLOW}⚠️  Deployment not found yet (first-time deploy). Skipping restart.${NC}"
 fi
 echo ""
 
