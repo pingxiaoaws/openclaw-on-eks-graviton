@@ -264,10 +264,14 @@ const Dashboard = {
     },
 
     // Open the create-instance modal
-    openCreateModal() {
+    async openCreateModal() {
         if (this.currentInstance) {
             this.showError('You already have an instance. Please delete it first.');
             return;
+        }
+        // Ensure models are loaded before opening
+        if (!this.allModels.bedrock && !this.allModels.siliconflow) {
+            await this.loadModels();
         }
         // Reset modal state
         this.modalSelectedProvider = 'bedrock';
