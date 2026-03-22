@@ -79,14 +79,34 @@ echo -e "${GREEN}✅ Database migration complete${NC}"
 echo ""
 
 # ============================================================================
-# Step 3: Update Provisioning Service with Billing Sidecar Config
+# Step 3: Rebuild and Push Provisioning Service Image
 # ============================================================================
 
-echo -e "${BLUE}[3/4] Updating provisioning service with billing sidecar config...${NC}"
+echo -e "${BLUE}[3/5] Rebuilding provisioning service image (with billing code changes)...${NC}"
+
+PROVISIONING_DIR_SRC="$(cd "${SCRIPT_DIR}/../../eks-pod-service"; pwd)"
+PROVISIONING_REPO="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning"
+
+docker build -t "${PROVISIONING_REPO}:latest" "$PROVISIONING_DIR_SRC"
+docker push "${PROVISIONING_REPO}:latest"
+
+echo -e "${GREEN}✅ Provisioning service image pushed: ${PROVISIONING_REPO}:latest${NC}"
+echo ""
+
+# ============================================================================
+# Step 4: Update Provisioning Service with Billing Sidecar Config
+# ============================================================================
+
+echo -e "${BLUE}[4/5] Updating provisioning service deployment...${NC}"
+
+kubectl set image deployment/openclaw-provisioning -n openclaw-provisioning \
+  provisioning="${PROVISIONING_REPO}:latest"
 
 kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
   BILLING_SIDECAR_ENABLED=true \
   BILLING_SIDECAR_IMAGE="${SIDECAR_REPO}:latest"
+
+kubectl rollout restart deployment/openclaw-provisioning -n openclaw-provisioning
 
 echo "Waiting for rollout..."
 kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning --timeout=300s
@@ -95,10 +115,10 @@ echo -e "${GREEN}✅ Provisioning service updated with billing sidecar${NC}"
 echo ""
 
 # ============================================================================
-# Step 4: Verify Billing Endpoint
+# Step 5: Verify Billing Endpoint
 # ============================================================================
 
-echo -e "${BLUE}[4/4] Verifying billing endpoint...${NC}"
+echo -e "${BLUE}[5/5] Verifying billing endpoint...${NC}"
 
 # Port-forward and test health
 kubectl port-forward -n openclaw-provisioning svc/openclaw-provisioning 18080:80 &>/dev/null &
@@ -124,6 +144,7 @@ echo -e "${GREEN}=== Phase 6 Complete: Billing Sidecar Deployed ===${NC}"
 echo ""
 echo "Deployed Components:"
 echo "  ✅ Billing sidecar image: ${SIDECAR_REPO}:latest"
+echo "  ✅ Provisioning service image: ${PROVISIONING_REPO}:latest"
 echo "  ✅ Database migration: usage_events table upgraded"
 echo "  ✅ Provisioning service: billing sidecar injection enabled"
 echo ""
