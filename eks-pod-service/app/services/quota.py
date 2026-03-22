@@ -109,8 +109,8 @@ def get_monthly_usage(user_id: str) -> int:
     try:
         cursor.execute('''
             SELECT COALESCE(SUM(total_tokens), 0)
-            FROM daily_usage
-            WHERE user_id = ? AND date >= date(?)
+            FROM usage_events
+            WHERE tenant_id = %s AND timestamp >= %s
         ''', (user_id, month_start))
 
         total = cursor.fetchone()[0]

@@ -135,35 +135,15 @@ const Billing = {
      */
     loadBillingData: async function() {
         try {
-            // Mock data - TODO: Replace with billing microservice API call
-            const mockData = {
-                period_days: 30,
-                plan: "free",
-                quota: {
-                    user_email: "user@example.com",
-                    plan: "free",
-                    current_usage: 0,
-                    limit: 100000,
-                    percentage_used: 0,
-                    is_warning: false,
-                    is_over_quota: false,
-                    status_emoji: "✅",
-                    status_text: "OK"
-                },
-                days_until_reset: 30,
-                summary: {
-                    total_tokens: 0,
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    total_calls: 0,
-                    estimated_cost: 0.0
-                },
-                by_model: [],
-                daily: []
-            };
-
-            console.log('Billing data loaded (mock):', mockData);
-            this.updateBillingUI(mockData);
+            const response = await fetch('/billing/usage', {
+                credentials: 'include'
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            console.log('Billing data loaded:', data);
+            this.updateBillingUI(data);
         } catch (error) {
             console.error('Failed to load billing data:', error);
             this.showError('Failed to load billing data');
