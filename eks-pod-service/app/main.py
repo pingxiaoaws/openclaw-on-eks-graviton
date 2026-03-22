@@ -72,7 +72,7 @@ def create_app():
             raise
 
     # Register blueprints (API endpoints)
-    from app.api import register_bp, login_bp, provision_bp, status_bp, delete_bp, health_bp, proxy_bp, devices_bp
+    from app.api import register_bp, login_bp, provision_bp, status_bp, delete_bp, health_bp, proxy_bp, devices_bp, models_bp
     from app.api.billing import billing_bp
     from app.api.admin import admin_bp
 
@@ -84,6 +84,7 @@ def create_app():
     app.register_blueprint(health_bp)
     app.register_blueprint(proxy_bp)  # Reverse proxy for instance access
     app.register_blueprint(devices_bp)  # Device pairing API
+    app.register_blueprint(models_bp)  # Model listing API
     app.register_blueprint(billing_bp)  # Billing API
     app.register_blueprint(admin_bp)  # Admin API
 

@@ -147,6 +147,9 @@ const Dashboard = {
                 // Setup event listeners
                 this.setupEventListeners();
 
+                // Load models list
+                this.loadModels();
+
                 // Load user's instance
                 this.loadInstance();
 
@@ -209,12 +212,15 @@ const Dashboard = {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.provider-option').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                // Show/hide API key input
+                // Show/hide API key input and model selector
                 const apiKeyGroup = document.getElementById('siliconflow-apikey-group');
+                const modelGroup = document.getElementById('model-selector');
                 if (btn.dataset.provider === 'siliconflow') {
                     apiKeyGroup.classList.remove('hidden');
+                    if (modelGroup) modelGroup.classList.add('hidden');
                 } else {
                     apiKeyGroup.classList.add('hidden');
+                    if (modelGroup) modelGroup.classList.remove('hidden');
                 }
             });
         });
@@ -232,6 +238,26 @@ const Dashboard = {
                     toggleKeyBtn.textContent = '👁️';
                 }
             });
+        }
+    },
+
+    // Load available models and populate dropdown
+    async loadModels() {
+        try {
+            const data = await API.getModels();
+            const select = document.getElementById('model-select');
+            if (!select || !data.models) return;
+
+            select.innerHTML = '';
+            data.models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = `${model.name}  —  ${model.provider_label}`;
+                if (model.default) option.selected = true;
+                select.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Failed to load models:', error);
         }
     },
 
@@ -405,6 +431,17 @@ const Dashboard = {
         const selectedProvider = document.querySelector('.provider-option.active')?.dataset.provider || 'bedrock';
         const providerLabel = selectedProvider === 'siliconflow' ? 'SiliconFlow' : 'Bedrock';
 
+        // Get selected model (bedrock only)
+        let selectedModel = null;
+        let modelLabel = '';
+        if (selectedProvider === 'bedrock') {
+            const modelSelect = document.getElementById('model-select');
+            if (modelSelect) {
+                selectedModel = modelSelect.value;
+                modelLabel = modelSelect.options[modelSelect.selectedIndex]?.textContent || selectedModel;
+            }
+        }
+
         // Validate SiliconFlow API key
         let siliconflowApiKey = null;
         if (selectedProvider === 'siliconflow') {
@@ -419,7 +456,8 @@ const Dashboard = {
             }
         }
 
-        if (!confirm(`Create a new OpenClaw instance?\n\nProvider: ${providerLabel}\nRuntime: ${runtimeLabel}\nStorage: ${storageLabel}\n\nThis may take a few minutes.`)) {
+        const modelInfo = selectedModel ? `\nModel: ${modelLabel}` : '';
+        if (!confirm(`Create a new OpenClaw instance?\n\nProvider: ${providerLabel}${modelInfo}\nRuntime: ${runtimeLabel}\nStorage: ${storageLabel}\n\nThis may take a few minutes.`)) {
             return;
         }
 
@@ -429,7 +467,7 @@ const Dashboard = {
         this.hideError();
 
         try {
-            const result = await API.createInstance(selectedRuntime, selectedProvider, siliconflowApiKey);
+            const result = await API.createInstance(selectedRuntime, selectedProvider, siliconflowApiKey, selectedModel);
             console.log('Instance created:', result);
 
             // Show success state

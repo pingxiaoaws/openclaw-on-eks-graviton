@@ -69,6 +69,15 @@ def provision():
         if provider not in ('bedrock', 'siliconflow'):
             return jsonify({"error": "Invalid provider. Must be 'bedrock' or 'siliconflow'"}), 400
 
+        # Validate model selection (bedrock only)
+        selected_model = None
+        if provider == 'bedrock':
+            selected_model = data.get('model')
+            if selected_model:
+                valid_model_ids = [m['id'] for m in Config.BEDROCK_MODELS]
+                if selected_model not in valid_model_ids:
+                    return jsonify({"error": f"Invalid model. Must be one of: {valid_model_ids}"}), 400
+
         # Validate SiliconFlow API key (user-provided)
         siliconflow_api_key = None
         if provider == 'siliconflow':
@@ -136,7 +145,8 @@ def provision():
             custom_config=custom_config,
             role_arn=role_arn,
             provider=provider,
-            siliconflow_api_key=siliconflow_api_key
+            siliconflow_api_key=siliconflow_api_key,
+            model=selected_model
         )
 
         # Build response

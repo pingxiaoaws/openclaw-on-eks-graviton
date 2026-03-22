@@ -92,8 +92,13 @@ const API = {
         }
     },
 
+    // Get available models
+    async getModels() {
+        return this.request('/models');
+    },
+
     // Create new instance
-    async createInstance(runtimeMode = 'runc', provider = 'bedrock', siliconflowApiKey = null) {
+    async createInstance(runtimeMode = 'runc', provider = 'bedrock', siliconflowApiKey = null, model = null) {
         const config = {};
         if (runtimeMode === 'kata-qemu') {
             config.runtime_class = 'kata-qemu';
@@ -110,6 +115,9 @@ const API = {
         const body = { config, provider };
         if (provider === 'siliconflow' && siliconflowApiKey) {
             body.siliconflow_api_key = siliconflowApiKey;
+        }
+        if (provider === 'bedrock' && model) {
+            body.model = model;
         }
         return this.request('/provision', {
             method: 'POST',

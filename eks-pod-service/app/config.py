@@ -76,6 +76,15 @@ class Config:
         'persistentvolumeclaims': '2'
     }
 
+    # Available Bedrock models for user selection
+    BEDROCK_MODELS = [
+        {'id': 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0', 'name': 'Claude Sonnet 4.5', 'provider_label': 'Anthropic', 'default': True},
+        {'id': 'bedrock/us.anthropic.claude-opus-4-0-20250514-v1:0', 'name': 'Claude Opus 4', 'provider_label': 'Anthropic'},
+        {'id': 'bedrock/us.anthropic.claude-haiku-3-5-20241022-v1:0', 'name': 'Claude Haiku 3.5', 'provider_label': 'Anthropic'},
+        {'id': 'bedrock/us.meta.llama3-3-70b-instruct-v1:0', 'name': 'Llama 3.3 70B', 'provider_label': 'Meta'},
+        {'id': 'bedrock/us.amazon.nova-pro-v1:0', 'name': 'Amazon Nova Pro', 'provider_label': 'Amazon'},
+    ]
+
     # SiliconFlow provider configuration (api_key provided by user at provision time)
     SILICONFLOW_DEFAULTS = {
         'base_url': os.environ.get('SILICONFLOW_BASE_URL', 'https://api.siliconflow.cn/v1'),

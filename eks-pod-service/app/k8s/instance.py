@@ -7,7 +7,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None, role_arn=None, provider='bedrock', siliconflow_api_key=None):
+def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None, role_arn=None, provider='bedrock', siliconflow_api_key=None, model=None):
     """
     Create an OpenClawInstance CRD
 
@@ -21,6 +21,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         role_arn: IAM Role ARN for Pod Identity (optional)
         provider: LLM provider - 'bedrock' or 'siliconflow' (default: 'bedrock')
         siliconflow_api_key: SiliconFlow API key (required when provider='siliconflow')
+        model: Bedrock model ID override (optional, bedrock provider only)
 
     Returns:
         Tuple of (instance, created)
@@ -68,6 +69,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             }
         }
     else:  # bedrock (default)
+        bedrock_model = model if model else config['model']
         config_raw = {
             "gateway": {
                 "controlUi": {
@@ -78,7 +80,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             "agents": {
                 "defaults": {
                     "model": {
-                        "primary": config['model']
+                        "primary": bedrock_model
                     }
                 }
             }
