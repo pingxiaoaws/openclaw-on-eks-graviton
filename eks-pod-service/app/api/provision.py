@@ -69,12 +69,18 @@ def provision():
         if provider not in ('bedrock', 'siliconflow'):
             return jsonify({"error": "Invalid provider. Must be 'bedrock' or 'siliconflow'"}), 400
 
-        # Validate model selection (bedrock only)
+        # Validate model selection
         selected_model = None
         if provider == 'bedrock':
             selected_model = data.get('model')
             if selected_model:
                 valid_model_ids = [m['id'] for m in Config.BEDROCK_MODELS]
+                if selected_model not in valid_model_ids:
+                    return jsonify({"error": f"Invalid model. Must be one of: {valid_model_ids}"}), 400
+        elif provider == 'siliconflow':
+            selected_model = data.get('model')
+            if selected_model:
+                valid_model_ids = [m['id'] for m in Config.SILICONFLOW_MODELS]
                 if selected_model not in valid_model_ids:
                     return jsonify({"error": f"Invalid model. Must be one of: {valid_model_ids}"}), 400
 

@@ -7,5 +7,8 @@ models_bp = Blueprint('models', __name__)
 
 @models_bp.route('/models', methods=['GET'])
 def list_models():
-    """Return available Bedrock models (public, no auth required)"""
-    return jsonify({"models": Config.BEDROCK_MODELS})
+    """Return available models grouped by provider (public, no auth required)"""
+    return jsonify({
+        "bedrock": Config.BEDROCK_MODELS,
+        "siliconflow": Config.SILICONFLOW_MODELS,
+    })

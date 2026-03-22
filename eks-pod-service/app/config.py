@@ -85,6 +85,14 @@ class Config:
         {'id': 'bedrock/us.amazon.nova-pro-v1:0', 'name': 'Amazon Nova Pro', 'provider_label': 'Amazon'},
     ]
 
+    # Available SiliconFlow models for user selection
+    SILICONFLOW_MODELS = [
+        {'id': 'Pro/deepseek-ai/DeepSeek-V3', 'name': 'DeepSeek V3', 'provider_label': 'DeepSeek', 'default': True},
+        {'id': 'Pro/deepseek-ai/DeepSeek-R1', 'name': 'DeepSeek R1', 'provider_label': 'DeepSeek'},
+        {'id': 'Qwen/Qwen2.5-72B-Instruct', 'name': 'Qwen 2.5 72B', 'provider_label': 'Alibaba'},
+        {'id': 'Pro/Qwen/Qwen2.5-Coder-32B-Instruct', 'name': 'Qwen 2.5 Coder 32B', 'provider_label': 'Alibaba'},
+    ]
+
     # SiliconFlow provider configuration (api_key provided by user at provision time)
     SILICONFLOW_DEFAULTS = {
         'base_url': os.environ.get('SILICONFLOW_BASE_URL', 'https://api.siliconflow.cn/v1'),

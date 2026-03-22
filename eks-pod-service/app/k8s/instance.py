@@ -21,7 +21,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         role_arn: IAM Role ARN for Pod Identity (optional)
         provider: LLM provider - 'bedrock' or 'siliconflow' (default: 'bedrock')
         siliconflow_api_key: SiliconFlow API key (required when provider='siliconflow')
-        model: Bedrock model ID override (optional, bedrock provider only)
+        model: Model ID override (optional, works for both bedrock and siliconflow)
 
     Returns:
         Tuple of (instance, created)
@@ -36,6 +36,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
     # Build config.raw based on provider
     if provider == 'siliconflow':
         sf = Config.SILICONFLOW_DEFAULTS
+        sf_model_id = model if model else sf['model']
         config_raw = {
             "gateway": {
                 "controlUi": {
@@ -51,7 +52,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                         "auth": "api-key",
                         "apiKey": siliconflow_api_key,
                         "models": [{
-                            "id": sf['model'],
+                            "id": sf_model_id,
                             "name": "SiliconFlow Model",
                             "input": ["text"],
                             "contextWindow": sf['context_window'],
@@ -63,7 +64,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             "agents": {
                 "defaults": {
                     "model": {
-                        "primary": f"siliconflow/{sf['model']}"
+                        "primary": f"siliconflow/{sf_model_id}"
                     }
                 }
             }

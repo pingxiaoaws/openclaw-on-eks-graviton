@@ -116,7 +116,7 @@ const API = {
         if (provider === 'siliconflow' && siliconflowApiKey) {
             body.siliconflow_api_key = siliconflowApiKey;
         }
-        if (provider === 'bedrock' && model) {
+        if (model) {
             body.model = model;
         }
         return this.request('/provision', {

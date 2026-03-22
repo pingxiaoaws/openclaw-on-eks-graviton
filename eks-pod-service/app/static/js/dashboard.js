@@ -212,16 +212,15 @@ const Dashboard = {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.provider-option').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                // Show/hide API key input and model selector
+                // Show/hide API key input
                 const apiKeyGroup = document.getElementById('siliconflow-apikey-group');
-                const modelGroup = document.getElementById('model-selector');
                 if (btn.dataset.provider === 'siliconflow') {
                     apiKeyGroup.classList.remove('hidden');
-                    if (modelGroup) modelGroup.classList.add('hidden');
                 } else {
                     apiKeyGroup.classList.add('hidden');
-                    if (modelGroup) modelGroup.classList.remove('hidden');
                 }
+                // Repopulate model dropdown for the selected provider
+                this.populateModelSelect(btn.dataset.provider);
             });
         });
 
@@ -241,24 +240,38 @@ const Dashboard = {
         }
     },
 
+    // All models keyed by provider
+    allModels: {},
+
     // Load available models and populate dropdown
     async loadModels() {
         try {
             const data = await API.getModels();
-            const select = document.getElementById('model-select');
-            if (!select || !data.models) return;
+            if (!data.bedrock && !data.siliconflow) return;
 
-            select.innerHTML = '';
-            data.models.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model.id;
-                option.textContent = `${model.name}  —  ${model.provider_label}`;
-                if (model.default) option.selected = true;
-                select.appendChild(option);
-            });
+            this.allModels = data;
+            // Populate dropdown for the currently active provider
+            const activeProvider = document.querySelector('.provider-option.active')?.dataset.provider || 'bedrock';
+            this.populateModelSelect(activeProvider);
         } catch (error) {
             console.error('Failed to load models:', error);
         }
+    },
+
+    // Populate model dropdown for a given provider
+    populateModelSelect(provider) {
+        const select = document.getElementById('model-select');
+        if (!select) return;
+
+        const models = this.allModels[provider] || [];
+        select.innerHTML = '';
+        models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.id;
+            option.textContent = `${model.name}  —  ${model.provider_label}`;
+            if (model.default) option.selected = true;
+            select.appendChild(option);
+        });
     },
 
     // Handle logout
@@ -431,15 +444,13 @@ const Dashboard = {
         const selectedProvider = document.querySelector('.provider-option.active')?.dataset.provider || 'bedrock';
         const providerLabel = selectedProvider === 'siliconflow' ? 'SiliconFlow' : 'Bedrock';
 
-        // Get selected model (bedrock only)
+        // Get selected model
         let selectedModel = null;
         let modelLabel = '';
-        if (selectedProvider === 'bedrock') {
-            const modelSelect = document.getElementById('model-select');
-            if (modelSelect) {
-                selectedModel = modelSelect.value;
-                modelLabel = modelSelect.options[modelSelect.selectedIndex]?.textContent || selectedModel;
-            }
+        const modelSelect = document.getElementById('model-select');
+        if (modelSelect && modelSelect.value) {
+            selectedModel = modelSelect.value;
+            modelLabel = modelSelect.options[modelSelect.selectedIndex]?.textContent || selectedModel;
         }
 
         // Validate SiliconFlow API key
