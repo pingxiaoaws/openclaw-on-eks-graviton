@@ -25,10 +25,23 @@ echo ""
 
 # Configuration (use env vars when available, fall back to defaults)
 REPO_DIR="${REPO_DIR:-$HOME/openclaw-on-eks-graviton}"
-REGION="${AWS_REGION:-${REGION:-us-west-2}}"
+
+# Resolve region from cluster ARN (same logic as 05-deploy script)
+if [ -z "${AWS_REGION:-${REGION:-}}" ]; then
+  CLUSTER_ARN=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}' 2>/dev/null || echo "")
+  if [[ "$CLUSTER_ARN" == arn:aws*:eks:* ]]; then
+    REGION=$(echo "$CLUSTER_ARN" | cut -d':' -f4)
+  else
+    REGION="us-west-2"
+  fi
+else
+  REGION="${AWS_REGION:-${REGION:-us-west-2}}"
+fi
+
 AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}"
 ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
-ECR_REPO="${ECR_REPO:-openclaw-provisioning-chinaregion}"
+ECR_REPO="${ECR_REPO:-openclaw-provisioning}"
+BILLING_SIDECAR_REPO="billing-sidecar"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 CLOUDFRONT_DIST_ID="${CLOUDFRONT_DIST_ID:-}"
 K8S_NAMESPACE="openclaw-provisioning"
@@ -53,7 +66,7 @@ else
     echo ""
 
     # Step 1: Update code from git
-    echo -e "${YELLOW}Step 1/7: Updating code from git${NC}"
+    echo -e "${YELLOW}Step 1/8: Updating code from git${NC}"
     cd "$REPO_DIR"
     git fetch origin
     git pull origin china-region
@@ -66,7 +79,7 @@ else
     echo ""
 
     # Step 2: Login to ECR
-    echo -e "${YELLOW}Step 2/7: Logging in to ECR${NC}"
+    echo -e "${YELLOW}Step 2/8: Logging in to ECR${NC}"
     aws ecr get-login-password --region "$REGION" | \
       docker login --username AWS --password-stdin "$ECR_REGISTRY"
     if [ $? -eq 0 ]; then
@@ -84,7 +97,7 @@ else
     echo ""
 
     # Step 3: Build Docker image
-    echo -e "${YELLOW}Step 3/7: Building Docker image (ARM64)${NC}"
+    echo -e "${YELLOW}Step 3/8: Building Docker image (ARM64)${NC}"
     cd "$REPO_DIR/eks-pod-service"
     docker build --platform linux/arm64 -t "$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG" .
     if [ $? -eq 0 ]; then
@@ -96,7 +109,7 @@ else
     echo ""
 
     # Step 4: Push to ECR
-    echo -e "${YELLOW}Step 4/7: Pushing image to ECR${NC}"
+    echo -e "${YELLOW}Step 4/8: Pushing image to ECR${NC}"
     docker push "$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✅ Image pushed to ECR${NC}"
@@ -106,13 +119,54 @@ else
     fi
     echo ""
 
-    # Step 5: Verify image (skipped - push success is sufficient)
-    echo -e "${YELLOW}Step 5/7: Image push succeeded, skipping ECR verify${NC}"
+    # Step 5: Build and push billing sidecar image
+    echo -e "${YELLOW}Step 5/8: Building and pushing billing sidecar image${NC}"
+
+    # Ensure billing sidecar ECR repo exists
+    aws ecr describe-repositories --repository-names "$BILLING_SIDECAR_REPO" --region "$REGION" &>/dev/null || \
+      aws ecr create-repository --repository-name "$BILLING_SIDECAR_REPO" --region "$REGION" --query 'repository.repositoryUri' --output text
+    echo -e "${GREEN}✅ Billing sidecar ECR repository ready${NC}"
+
+    BILLING_SIDECAR_DIR="$REPO_DIR/billing-service"
+    if [ ! -d "$BILLING_SIDECAR_DIR" ]; then
+        echo -e "${RED}❌ Billing service directory not found: $BILLING_SIDECAR_DIR${NC}"
+        exit 1
+    fi
+
+    BILLING_SIDECAR_IMAGE="$ECR_REGISTRY/$BILLING_SIDECAR_REPO:$IMAGE_TAG"
+    docker build --platform linux/arm64 -t "$BILLING_SIDECAR_IMAGE" "$BILLING_SIDECAR_DIR"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Billing sidecar image built successfully${NC}"
+    else
+        echo -e "${RED}❌ Billing sidecar build failed${NC}"
+        exit 1
+    fi
+
+    docker push "$BILLING_SIDECAR_IMAGE"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Billing sidecar image pushed to ECR${NC}"
+    else
+        echo -e "${RED}❌ Billing sidecar push failed${NC}"
+        exit 1
+    fi
     echo ""
 fi
 
-# Step 6: Restart K8s deployment (works from both local and remote)
-echo -e "${YELLOW}Step 6/7: Restarting Kubernetes deployment${NC}"
+# Step 6: Set billing sidecar env var on deployment
+echo -e "${YELLOW}Step 6/8: Setting billing sidecar image on deployment${NC}"
+BILLING_SIDECAR_IMAGE="${BILLING_SIDECAR_IMAGE:-$ECR_REGISTRY/$BILLING_SIDECAR_REPO:$IMAGE_TAG}"
+kubectl set env deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE" \
+  BILLING_SIDECAR_IMAGE="$BILLING_SIDECAR_IMAGE"
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Billing sidecar image env var set${NC}"
+else
+    echo -e "${RED}❌ Failed to set billing sidecar env var${NC}"
+    exit 1
+fi
+echo ""
+
+# Step 7: Restart K8s deployment (works from both local and remote)
+echo -e "${YELLOW}Step 7/8: Restarting Kubernetes deployment${NC}"
 kubectl rollout restart deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Rollout initiated${NC}"
@@ -131,8 +185,8 @@ else
 fi
 echo ""
 
-# Step 7: Invalidate CloudFront cache (optional)
-echo -e "${YELLOW}Step 7/7: Invalidating CloudFront cache${NC}"
+# Step 8: Invalidate CloudFront cache (optional)
+echo -e "${YELLOW}Step 8/8: Invalidating CloudFront cache${NC}"
 if [ -z "$CLOUDFRONT_DIST_ID" ]; then
     echo -e "${YELLOW}⚠️  CLOUDFRONT_DIST_ID not set, skipping cache invalidation${NC}"
     INVALIDATION_ID="N/A"
@@ -163,9 +217,9 @@ echo "=========================================="
 echo ""
 
 if [ "$LOCAL_MODE" != "local" ]; then
-    echo "📦 Image:"
-    echo "   URI: $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
-    echo "   Digest: $IMAGE_DIGEST"
+    echo "📦 Images:"
+    echo "   Provisioning: $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG"
+    echo "   Billing Sidecar: $ECR_REGISTRY/$BILLING_SIDECAR_REPO:$IMAGE_TAG"
     echo ""
 fi
 
