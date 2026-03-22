@@ -1125,57 +1125,58 @@
                 </div>
             </div>
         </div>
-        <!-- Create Instance Modal -->
-        <div class="modal-backdrop" id="create-modal">
-            <div class="modal-card" onclick="event.stopPropagation()">
-                <div class="modal-header">
-                    <div class="modal-title">🦞 Create OpenClaw Instance</div>
-                    <div class="modal-subtitle">Configure your instance before launching</div>
-                </div>
+    </main>
 
-                <div class="modal-body">
-                    <!-- Provider Section -->
-                    <div class="modal-section">
-                        <div class="modal-section-label">Provider</div>
-                        <div class="modal-toggle-group" id="modal-provider-group">
-                            <button class="modal-toggle-btn active" data-provider="bedrock">☁️ Bedrock</button>
-                            <button class="modal-toggle-btn" data-provider="siliconflow">🤖 SiliconFlow</button>
-                        </div>
-                        <div class="modal-apikey-row" id="modal-apikey-row">
-                            <input type="password" class="modal-apikey-input" id="modal-apikey"
-                                   placeholder="SiliconFlow API Key (sk-...)" autocomplete="off" />
-                        </div>
+    <!-- Create Instance Modal (outside <main> to avoid stacking context issues) -->
+    <div class="modal-backdrop" id="create-modal">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title">🦞 Create OpenClaw Instance</div>
+                <div class="modal-subtitle">Configure your instance before launching</div>
+            </div>
+
+            <div class="modal-body">
+                <!-- Provider Section -->
+                <div class="modal-section">
+                    <div class="modal-section-label">Provider</div>
+                    <div class="modal-toggle-group" id="modal-provider-group">
+                        <button class="modal-toggle-btn active" data-provider="bedrock">☁️ Bedrock</button>
+                        <button class="modal-toggle-btn" data-provider="siliconflow">🤖 SiliconFlow</button>
                     </div>
-
-                    <div class="modal-divider"></div>
-
-                    <!-- Model Section -->
-                    <div class="modal-section" style="margin-top:24px">
-                        <div class="modal-section-label">Model</div>
-                        <div class="model-card-list" id="modal-model-list">
-                            <div class="model-card-list-loading">Loading models...</div>
-                        </div>
-                    </div>
-
-                    <div class="modal-divider"></div>
-
-                    <!-- Runtime Section -->
-                    <div class="modal-section" style="margin-top:24px">
-                        <div class="modal-section-label">Runtime</div>
-                        <div class="modal-toggle-group" id="modal-runtime-group">
-                            <button class="modal-toggle-btn active" data-runtime="runc">📦 Standard</button>
-                            <button class="modal-toggle-btn" data-runtime="kata-qemu">🛡️ Secure VM</button>
-                        </div>
+                    <div class="modal-apikey-row" id="modal-apikey-row">
+                        <input type="password" class="modal-apikey-input" id="modal-apikey"
+                               placeholder="SiliconFlow API Key (sk-...)" autocomplete="off" />
                     </div>
                 </div>
 
-                <div class="modal-footer">
-                    <button class="btn modal-btn-cancel" id="modal-cancel-btn">Cancel</button>
-                    <button class="btn modal-btn-create" id="modal-create-btn">Create Instance</button>
+                <div class="modal-divider"></div>
+
+                <!-- Model Section -->
+                <div class="modal-section" style="margin-top:24px">
+                    <div class="modal-section-label">Model</div>
+                    <div class="model-card-list" id="modal-model-list">
+                        <div class="model-card-list-loading">Loading models...</div>
+                    </div>
+                </div>
+
+                <div class="modal-divider"></div>
+
+                <!-- Runtime Section -->
+                <div class="modal-section" style="margin-top:24px">
+                    <div class="modal-section-label">Runtime</div>
+                    <div class="modal-toggle-group" id="modal-runtime-group">
+                        <button class="modal-toggle-btn active" data-runtime="runc">📦 Standard</button>
+                        <button class="modal-toggle-btn" data-runtime="kata-qemu">🛡️ Secure VM</button>
+                    </div>
                 </div>
             </div>
+
+            <div class="modal-footer">
+                <button class="btn modal-btn-cancel" id="modal-cancel-btn">Cancel</button>
+                <button class="btn modal-btn-create" id="modal-create-btn">Create Instance</button>
+            </div>
         </div>
-    </main>
+    </div>
 
     <script>
         // Dynamically load scripts with correct path prefix
