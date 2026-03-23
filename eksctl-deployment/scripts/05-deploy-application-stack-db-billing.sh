@@ -108,7 +108,8 @@ else
       "Effect": "Allow",
       "Action": [
         "bedrock:InvokeModel",
-        "bedrock:InvokeModelWithResponseStream"
+        "bedrock:InvokeModelWithResponseStream",
+        "bedrock:ListFoundationModels"
       ],
       "Resource": [
         "arn:${AWS_PARTITION}:bedrock:*:*:model/*",
