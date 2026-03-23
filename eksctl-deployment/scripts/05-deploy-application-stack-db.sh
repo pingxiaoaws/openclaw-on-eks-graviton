@@ -114,6 +114,15 @@ else
         "arn:${AWS_PARTITION}:bedrock:*:*:inference-profile/*",
         "arn:${AWS_PARTITION}:bedrock:*::foundation-model/*"
       ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "aws-marketplace:Subscribe",
+        "aws-marketplace:Unsubscribe",
+        "aws-marketplace:ViewSubscriptions"
+      ],
+      "Resource": "*"
     }
   ]
 }

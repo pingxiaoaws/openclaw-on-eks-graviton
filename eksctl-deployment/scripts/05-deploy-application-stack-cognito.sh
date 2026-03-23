@@ -94,7 +94,20 @@ else
         "bedrock:InvokeModel",
         "bedrock:InvokeModelWithResponseStream"
       ],
-      "Resource": "arn:aws:bedrock:*:*:model/*"
+      "Resource": [
+        "arn:${AWS_PARTITION}:bedrock:*:*:model/*",
+        "arn:${AWS_PARTITION}:bedrock:*:*:inference-profile/*",
+        "arn:${AWS_PARTITION}:bedrock:*::foundation-model/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "aws-marketplace:Subscribe",
+        "aws-marketplace:Unsubscribe",
+        "aws-marketplace:ViewSubscriptions"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -146,10 +159,6 @@ fi
 
 echo ""
 
-# ============================================================================
-# Step 3: Create Pod Identity Association
-# ============================================================================
-
 echo -e "${BLUE}[3/9] Creating Pod Identity Association...${NC}"
 
 BEDROCK_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${BEDROCK_ROLE_NAME}"
@@ -179,10 +188,6 @@ else
 fi
 
 echo ""
-
-# ============================================================================
-# Step 4: Create Cognito User Pool
-# ============================================================================
 
 echo -e "${BLUE}[4/9] Creating Cognito User Pool...${NC}"
 
@@ -239,10 +244,6 @@ fi
 
 echo ""
 
-# ============================================================================
-# Step 5: Build and Push Docker Image
-# ============================================================================
-
 echo -e "${BLUE}[5/9] Building and pushing Docker image...${NC}"
 
 BUILD_SCRIPT="$(dirname "$0")/build-and-push-image.sh"
@@ -259,10 +260,6 @@ else
 fi
 
 echo ""
-
-# ============================================================================
-# Step 6: Deploy Provisioning Service (with Cognito config)
-# ============================================================================
 
 echo -e "${BLUE}[6/9] Deploying Provisioning Service...${NC}"
 
@@ -296,10 +293,6 @@ kubectl apply -f "$PROVISIONING_DIR/kubernetes/hpa.yaml" 2>/dev/null || echo "HP
 
 echo -e "${GREEN}✅ Provisioning service deployed with Cognito configuration${NC}"
 echo ""
-
-# ============================================================================
-# Step 7: Convert ALB to Internet-Facing
-# ============================================================================
 
 echo -e "${BLUE}[7/9] Converting ALB to Internet-Facing...${NC}"
 
@@ -384,10 +377,6 @@ fi
 echo -e "${GREEN}✅ ALB converted to internet-facing${NC}"
 echo "ALB DNS: $ALB_DNS"
 echo ""
-
-# ============================================================================
-# Step 8: Create CloudFront Distribution
-# ============================================================================
 
 echo -e "${BLUE}[8/9] Creating CloudFront Distribution...${NC}"
 
@@ -482,10 +471,6 @@ fi
 echo "CloudFront Domain: $CLOUDFRONT_DOMAIN"
 echo ""
 
-# ============================================================================
-# Step 9: Update Provisioning Service with CloudFront Config
-# ============================================================================
-
 echo -e "${BLUE}[9/9] Updating Provisioning Service with CloudFront configuration...${NC}"
 
 kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
@@ -499,10 +484,6 @@ kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning
 
 echo -e "${GREEN}✅ Provisioning Service fully configured${NC}"
 echo ""
-
-# ============================================================================
-# Summary
-# ============================================================================
 
 echo -e "${GREEN}=== Phase 3 Complete: Full Application Stack Deployed ===${NC}"
 echo ""
