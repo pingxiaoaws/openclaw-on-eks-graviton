@@ -189,9 +189,9 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             },
             "networking": {
                 "service": {
-                    "type": "NodePort" if config.get('runtime_class') and 'kata' in str(config.get('runtime_class', '')) else "ClusterIP"
+                    "type": "ClusterIP"
                 },
-                "ingress": _build_ingress_config(user_id, runtime_class=config.get('runtime_class')) if Config.INGRESS_ENABLED else {"enabled": False}
+                "ingress": _build_ingress_config(user_id) if Config.INGRESS_ENABLED else {"enabled": False}
             },
             "security": {
                 "podSecurityContext": {
@@ -300,7 +300,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
     return k8s_client.create_or_get(create, get, f"OpenClawInstance {instance_name}")
 
 
-def _build_ingress_config(user_id, runtime_class=None):
+def _build_ingress_config(user_id):
     """
     Build Ingress configuration for Public ALB behind CloudFront (NEW) or Internal ALB via API Gateway (OLD)
 
@@ -318,23 +318,15 @@ def _build_ingress_config(user_id, runtime_class=None):
     """
     if Config.USE_PUBLIC_ALB:
         # Public ALB + CloudFront 模式
-        # Kata runtime needs instance target-type (ALB → NodePort → Service → Pod)
-        # because direct Pod IP access doesn't work with Kata's virtual network
-        is_kata = runtime_class and 'kata' in str(runtime_class)
-        target_type = 'instance' if is_kata else 'ip'
-
-        annotations = {
-            **Config.PUBLIC_ALB_INGRESS_ANNOTATIONS,
-            # Override target-type for kata
-            "alb.ingress.kubernetes.io/target-type": target_type,
-            # Override healthcheck path
-            f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-path": f"/instance/{user_id}/",
-        }
-
         config = {
             "enabled": True,
             "className": Config.INGRESS_CLASS,
-            "annotations": annotations,
+            "annotations": {
+                # Merge Public ALB annotations
+                **Config.PUBLIC_ALB_INGRESS_ANNOTATIONS,
+                # Override healthcheck path
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-path": f"/instance/{user_id}/",
+            },
             # Host-based routing with CloudFront domain
             "hosts": [{
                 "host": Config.CLOUDFRONT_DOMAIN,
