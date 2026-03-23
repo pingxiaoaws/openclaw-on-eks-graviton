@@ -83,7 +83,46 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                     "amazon-bedrock": {
                         "baseUrl": f"https://bedrock-runtime.{Config.AWS_REGION}.amazonaws.com",
                         "api": "bedrock-converse-stream",
-                        "auth": "aws-sdk"
+                        "auth": "aws-sdk",
+                        "models": [
+                            {
+                                "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                                "name": "Claude Sonnet 4.5",
+                                "reasoning": True,
+                                "input": ["text", "image"],
+                                "contextWindow": 200000,
+                                "maxTokens": 16384
+                            },
+                            {
+                                "id": "us.anthropic.claude-opus-4-20250514-v1:0",
+                                "name": "Claude Opus 4",
+                                "reasoning": True,
+                                "input": ["text", "image"],
+                                "contextWindow": 200000,
+                                "maxTokens": 32000
+                            },
+                            {
+                                "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                                "name": "Claude Haiku 4.5",
+                                "input": ["text", "image"],
+                                "contextWindow": 200000,
+                                "maxTokens": 8192
+                            },
+                            {
+                                "id": "us.meta.llama3-3-70b-instruct-v1:0",
+                                "name": "Llama 3.3 70B",
+                                "input": ["text"],
+                                "contextWindow": 128000,
+                                "maxTokens": 4096
+                            },
+                            {
+                                "id": "us.amazon.nova-pro-v1:0",
+                                "name": "Amazon Nova Pro",
+                                "input": ["text", "image"],
+                                "contextWindow": 300000,
+                                "maxTokens": 5120
+                            }
+                        ]
                     }
                 },
                 "bedrockDiscovery": {
