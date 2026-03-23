@@ -183,7 +183,7 @@ echo -e "${BLUE}[2a/9] Initializing Bedrock model access...${NC}"
 # Marketplace permissions and won't hit AccessDeniedException on first use.
 
 # Use the default model (Claude Sonnet) for initialization
-INIT_MODEL_ID="us.anthropic.claude-sonnet-4-20250514-v1:0"
+INIT_MODEL_ID="us.anthropic.claude-sonnet-4-6"
 INIT_REGION="${AWS_REGION:-us-west-2}"
 
 echo "  Triggering model subscription for ${INIT_MODEL_ID}..."
