@@ -147,6 +147,49 @@ fi
 echo ""
 
 # ============================================================================
+# Step 2a: Initialize Bedrock Model Access (Marketplace subscription)
+# ============================================================================
+
+echo -e "${BLUE}[2a/9] Initializing Bedrock model access...${NC}"
+
+# Third-party models (e.g., Anthropic Claude) require a one-time AWS Marketplace
+# subscription per account. When a model is first invoked, Bedrock automatically
+# initiates the subscription in the background. We trigger this now using the IDE
+# role (which has Marketplace permissions) so that OpenClaw pods don't need
+# Marketplace permissions and won't hit AccessDeniedException on first use.
+
+# Use the default model (Claude Sonnet) for initialization
+INIT_MODEL_ID="us.anthropic.claude-sonnet-4-20250514-v1:0"
+INIT_REGION="${AWS_REGION:-us-west-2}"
+
+echo "  Triggering model subscription for ${INIT_MODEL_ID}..."
+
+# Send a minimal request to trigger auto-subscription
+INIT_RESULT=$(aws bedrock-runtime invoke-model \
+  --model-id "$INIT_MODEL_ID" \
+  --region "$INIT_REGION" \
+  --content-type "application/json" \
+  --accept "application/json" \
+  --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
+  /tmp/bedrock-init-response.json 2>&1) && {
+  echo -e "${GREEN}✅ Bedrock model access initialized (subscription active)${NC}"
+  rm -f /tmp/bedrock-init-response.json
+} || {
+  # Auto-subscription may take up to 2 minutes; a transient failure is expected
+  if echo "$INIT_RESULT" | grep -q "AccessDeniedException"; then
+    echo -e "${YELLOW}⚠️  Model subscription initiated but not yet active.${NC}"
+    echo "   This is normal for first-time use — Bedrock is finalizing the subscription."
+    echo "   It may take up to 2 minutes. OpenClaw instances will retry automatically."
+  else
+    echo -e "${YELLOW}⚠️  Model initialization returned: ${INIT_RESULT}${NC}"
+    echo "   Continuing — OpenClaw instances will trigger subscription on first use."
+  fi
+  rm -f /tmp/bedrock-init-response.json
+}
+
+echo ""
+
+# ============================================================================
 # Step 3: Create Pod Identity Association
 # ============================================================================
 
