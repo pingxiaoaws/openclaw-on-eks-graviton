@@ -78,6 +78,19 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                 },
                 "trustedProxies": Config.GATEWAY_CONFIG["trustedProxies"]
             },
+            "models": {
+                "providers": {
+                    "amazon-bedrock": {
+                        "baseUrl": f"https://bedrock-runtime.{Config.AWS_REGION}.amazonaws.com",
+                        "api": "bedrock-converse-stream",
+                        "auth": "aws-sdk"
+                    }
+                },
+                "bedrockDiscovery": {
+                    "enabled": True,
+                    "region": Config.AWS_REGION
+                }
+            },
             "agents": {
                 "defaults": {
                     "model": {

@@ -58,7 +58,7 @@ class Config:
         },
         'storage_size': os.environ.get('OPENCLAW_STORAGE_SIZE', '10Gi'),
         'storage_class': os.environ.get('OPENCLAW_STORAGE_CLASS', 'efs-sc'),
-        'model': os.environ.get('OPENCLAW_MODEL', 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'),
+        'model': os.environ.get('OPENCLAW_MODEL', 'amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0'),
         'aws_credentials_secret': os.environ.get('OPENCLAW_AWS_CREDENTIALS_SECRET', 'aws-credentials'),
         'image': {
             'repository': os.environ.get('OPENCLAW_IMAGE_REPOSITORY', 'ghcr.io/openclaw/openclaw'),
@@ -78,11 +78,11 @@ class Config:
 
     # Available Bedrock models for user selection
     BEDROCK_MODELS = [
-        {'id': 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0', 'name': 'Claude Sonnet 4.5', 'provider_label': 'Anthropic', 'default': True},
-        {'id': 'bedrock/us.anthropic.claude-opus-4-0-20250514-v1:0', 'name': 'Claude Opus 4', 'provider_label': 'Anthropic'},
-        {'id': 'bedrock/us.anthropic.claude-haiku-3-5-20241022-v1:0', 'name': 'Claude Haiku 3.5', 'provider_label': 'Anthropic'},
-        {'id': 'bedrock/us.meta.llama3-3-70b-instruct-v1:0', 'name': 'Llama 3.3 70B', 'provider_label': 'Meta'},
-        {'id': 'bedrock/us.amazon.nova-pro-v1:0', 'name': 'Amazon Nova Pro', 'provider_label': 'Amazon'},
+        {'id': 'amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0', 'name': 'Claude Sonnet 4.5', 'provider_label': 'Anthropic', 'default': True},
+        {'id': 'amazon-bedrock/us.anthropic.claude-opus-4-20250514-v1:0', 'name': 'Claude Opus 4', 'provider_label': 'Anthropic'},
+        {'id': 'amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0', 'name': 'Claude Haiku 4.5', 'provider_label': 'Anthropic'},
+        {'id': 'amazon-bedrock/us.meta.llama3-3-70b-instruct-v1:0', 'name': 'Llama 3.3 70B', 'provider_label': 'Meta'},
+        {'id': 'amazon-bedrock/us.amazon.nova-pro-v1:0', 'name': 'Amazon Nova Pro', 'provider_label': 'Amazon'},
     ]
 
     # Available SiliconFlow models for user selection
