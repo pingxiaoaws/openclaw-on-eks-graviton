@@ -68,11 +68,11 @@ cd eksctl-deployment/scripts
 ### 第 2 步：部署应用栈（~10 分钟）
 
 ```bash
-# 一键部署：Operator + IAM + DB + 应用 + ALB + CloudFront + Billing
-./05-deploy-application-stack-db-billing.sh
+# 一键部署：Operator + IAM + DB + 应用 + ALB + CloudFront
+./05-deploy-application-stack-db.sh
 ```
 
-这个脚本自动完成 11 个步骤：
+这个脚本自动完成 9 个步骤：
 
 | 步骤 | 内容 |
 |------|------|
@@ -86,8 +86,6 @@ cd eksctl-deployment/scripts
 | 7 | 创建 Shared ALB (Internet-facing) |
 | 8 | 创建 CloudFront Distribution |
 | 9 | 更新服务配置（CloudFront URL） |
-| 10 | Billing 数据库迁移 |
-| 11 | 启用 Billing Sidecar |
 
 ### 第 3 步：获取访问 URL
 
@@ -148,7 +146,7 @@ Dashboard 展示实时用量数据。
 │   │   ├── 02-deploy-controllers.sh          # 安装控制器
 │   │   ├── 03-deploy-karpenter-resources.sh  # Karpenter（可选）
 │   │   ├── 04-verify-deployment.sh           # 验证部署
-│   │   ├── 05-deploy-application-stack-db-billing.sh  # 部署应用栈 ⭐
+│   │   ├── 05-deploy-application-stack-db.sh         # 部署应用栈 ⭐
 │   │   ├── 07-cleanup-application-stack.sh   # 清理应用栈
 │   │   ├── 07-cleanup-all-resources.sh       # 清理所有资源
 │   │   └── build-and-push-image.sh           # 构建推送镜像
@@ -181,7 +179,7 @@ Dashboard 展示实时用量数据。
 ./07-cleanup-application-stack.sh
 
 # 重新部署
-./05-deploy-application-stack-db-billing.sh
+./05-deploy-application-stack-db.sh
 ```
 
 ### 查看实例
