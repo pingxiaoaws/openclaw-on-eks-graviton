@@ -94,7 +94,20 @@ else
         "bedrock:InvokeModel",
         "bedrock:InvokeModelWithResponseStream"
       ],
-      "Resource": "arn:aws:bedrock:*:*:model/*"
+      "Resource": [
+        "arn:${AWS_PARTITION}:bedrock:*:*:model/*",
+        "arn:${AWS_PARTITION}:bedrock:*:*:inference-profile/*",
+        "arn:${AWS_PARTITION}:bedrock:*::foundation-model/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "aws-marketplace:Subscribe",
+        "aws-marketplace:Unsubscribe",
+        "aws-marketplace:ViewSubscriptions"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -146,53 +159,6 @@ fi
 
 echo ""
 
-# ============================================================================
-# Step 2a: Initialize Bedrock Model Access (Marketplace subscription)
-# ============================================================================
-
-echo -e "${BLUE}[2a/9] Initializing Bedrock model access...${NC}"
-
-# Third-party models (e.g., Anthropic Claude) require a one-time AWS Marketplace
-# subscription per account. When a model is first invoked, Bedrock automatically
-# initiates the subscription in the background. We trigger this now using the IDE
-# role (which has Marketplace permissions) so that OpenClaw pods don't need
-# Marketplace permissions and won't hit AccessDeniedException on first use.
-
-# Use the default model (Claude Sonnet) for initialization
-INIT_MODEL_ID="us.anthropic.claude-sonnet-4-6"
-INIT_REGION="${AWS_REGION:-us-west-2}"
-
-echo "  Triggering model subscription for ${INIT_MODEL_ID}..."
-
-# Send a minimal request to trigger auto-subscription
-INIT_RESULT=$(aws bedrock-runtime invoke-model \
-  --model-id "$INIT_MODEL_ID" \
-  --region "$INIT_REGION" \
-  --content-type "application/json" \
-  --accept "application/json" \
-  --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
-  /tmp/bedrock-init-response.json 2>&1) && {
-  echo -e "${GREEN}✅ Bedrock model access initialized (subscription active)${NC}"
-  rm -f /tmp/bedrock-init-response.json
-} || {
-  # Auto-subscription may take up to 2 minutes; a transient failure is expected
-  if echo "$INIT_RESULT" | grep -q "AccessDeniedException"; then
-    echo -e "${YELLOW}⚠️  Model subscription initiated but not yet active.${NC}"
-    echo "   This is normal for first-time use — Bedrock is finalizing the subscription."
-    echo "   It may take up to 2 minutes. OpenClaw instances will retry automatically."
-  else
-    echo -e "${YELLOW}⚠️  Model initialization returned: ${INIT_RESULT}${NC}"
-    echo "   Continuing — OpenClaw instances will trigger subscription on first use."
-  fi
-  rm -f /tmp/bedrock-init-response.json
-}
-
-echo ""
-
-# ============================================================================
-# Step 3: Create Pod Identity Association
-# ============================================================================
-
 echo -e "${BLUE}[3/9] Creating Pod Identity Association...${NC}"
 
 BEDROCK_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT}:role/${BEDROCK_ROLE_NAME}"
@@ -222,10 +188,6 @@ else
 fi
 
 echo ""
-
-# ============================================================================
-# Step 4: Create Cognito User Pool
-# ============================================================================
 
 echo -e "${BLUE}[4/9] Creating Cognito User Pool...${NC}"
 
@@ -282,10 +244,6 @@ fi
 
 echo ""
 
-# ============================================================================
-# Step 5: Build and Push Docker Image
-# ============================================================================
-
 echo -e "${BLUE}[5/9] Building and pushing Docker image...${NC}"
 
 BUILD_SCRIPT="$(dirname "$0")/build-and-push-image.sh"
@@ -302,10 +260,6 @@ else
 fi
 
 echo ""
-
-# ============================================================================
-# Step 6: Deploy Provisioning Service (with Cognito config)
-# ============================================================================
 
 echo -e "${BLUE}[6/9] Deploying Provisioning Service...${NC}"
 
@@ -339,10 +293,6 @@ kubectl apply -f "$PROVISIONING_DIR/kubernetes/hpa.yaml" 2>/dev/null || echo "HP
 
 echo -e "${GREEN}✅ Provisioning service deployed with Cognito configuration${NC}"
 echo ""
-
-# ============================================================================
-# Step 7: Convert ALB to Internet-Facing
-# ============================================================================
 
 echo -e "${BLUE}[7/9] Converting ALB to Internet-Facing...${NC}"
 
@@ -427,10 +377,6 @@ fi
 echo -e "${GREEN}✅ ALB converted to internet-facing${NC}"
 echo "ALB DNS: $ALB_DNS"
 echo ""
-
-# ============================================================================
-# Step 8: Create CloudFront Distribution
-# ============================================================================
 
 echo -e "${BLUE}[8/9] Creating CloudFront Distribution...${NC}"
 
@@ -525,10 +471,6 @@ fi
 echo "CloudFront Domain: $CLOUDFRONT_DOMAIN"
 echo ""
 
-# ============================================================================
-# Step 9: Update Provisioning Service with CloudFront Config
-# ============================================================================
-
 echo -e "${BLUE}[9/9] Updating Provisioning Service with CloudFront configuration...${NC}"
 
 kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
@@ -542,10 +484,6 @@ kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning
 
 echo -e "${GREEN}✅ Provisioning Service fully configured${NC}"
 echo ""
-
-# ============================================================================
-# Summary
-# ============================================================================
 
 echo -e "${GREEN}=== Phase 3 Complete: Full Application Stack Deployed ===${NC}"
 echo ""
