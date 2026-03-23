@@ -825,7 +825,7 @@ echo ""
 
 echo -e "${BLUE}[11/11] Enabling billing sidecar on provisioning service...${NC}"
 
-BILLING_SIDECAR_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/billing-sidecar:latest"
+BILLING_SIDECAR_IMAGE="public.ecr.aws/u6t0z4w2/billing-sidecar:latest"
 
 kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
   BILLING_SIDECAR_ENABLED=true \
