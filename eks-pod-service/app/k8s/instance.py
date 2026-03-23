@@ -30,8 +30,11 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
 
     # Merge configuration (custom_config overrides defaults)
     config = copy.deepcopy(Config.OPENCLAW_DEFAULTS)
+    logger.info(f"🔍 DEFAULTS runtime_class={config.get('runtime_class')}, node_selector={config.get('node_selector')}")
+    logger.info(f"🔍 custom_config received: {custom_config}")
     if custom_config:
         _deep_merge(config, custom_config)
+    logger.info(f"🔍 MERGED runtime_class={config.get('runtime_class')}, node_selector={config.get('node_selector')}")
 
     # Build config.raw based on provider
     if provider == 'siliconflow':
