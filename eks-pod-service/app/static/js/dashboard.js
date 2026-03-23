@@ -257,7 +257,7 @@ const Dashboard = {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('#modal-runtime-group .modal-toggle-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                if (btn.dataset.runtime === 'kata-qemu') btn.classList.add('accent-orange');
+                if (btn.dataset.runtime === 'kata-fc') btn.classList.add('accent-orange');
                 this.modalSelectedRuntime = btn.dataset.runtime;
             });
         });

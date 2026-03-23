@@ -121,8 +121,9 @@ const API = {
     // Create new instance
     async createInstance(runtimeMode = 'runc', provider = 'bedrock', siliconflowApiKey = null, model = null) {
         const config = {};
-        if (runtimeMode === 'kata-qemu') {
-            config.runtime_class = 'kata-qemu';
+        if (runtimeMode === 'kata-fc') {
+            // Secure VM with Kata Containers (Firecracker)
+            config.runtime_class = 'kata-fc';
             config.node_selector = { 'workload-type': 'kata' };
             config.tolerations = [{
                 key: 'kata-dedicated',
@@ -131,6 +132,9 @@ const API = {
             }];
             config.storage_class = 'gp3';
         } else {
+            // Standard container (runc) - explicitly set runtime_class to null
+            // This ensures the backend doesn't use OPENCLAW_RUNTIME_CLASS env var default
+            config.runtime_class = null;
             config.storage_class = 'efs-sc';
         }
         const body = { config, provider };
