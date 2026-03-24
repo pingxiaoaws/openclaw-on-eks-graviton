@@ -109,6 +109,10 @@ def status(user_id):
         # Get LLM provider from label
         llm_provider = instance.get('metadata', {}).get('labels', {}).get('openclaw.rocks/llm-provider', 'bedrock')
 
+        # Get runtime class and storage class from spec
+        runtime_class = instance.get('spec', {}).get('availability', {}).get('runtimeClassName') or None
+        storage_class = instance.get('spec', {}).get('storage', {}).get('persistence', {}).get('storageClass', 'efs-sc')
+
         # Check Service endpoints readiness
         service_ready = False
         try:
@@ -194,6 +198,8 @@ def status(user_id):
             "gateway_token": gateway_token if ready_for_connect else None,  # Only expose token when ready
             "created_at": created_at,
             "llm_provider": llm_provider,  # 'bedrock' or 'siliconflow'
+            "runtime_class": runtime_class,  # 'kata-fc', 'kata-qemu', or None (runc)
+            "storage_class": storage_class,  # 'gp3' or 'efs-sc'
             "pods": pod_status,
             "readiness_checks": {  # Detailed readiness info for debugging
                 "phase_running": phase == 'Running',
