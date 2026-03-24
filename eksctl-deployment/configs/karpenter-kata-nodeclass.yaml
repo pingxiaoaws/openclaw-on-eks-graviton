@@ -4,29 +4,23 @@ kind: EC2NodeClass
 metadata:
   name: kata-metal
 spec:
-  # AMI Selection - Ubuntu 24.04 ARM64
   amiSelectorTerms:
     - id: ami-03fd8f02d5b4488c8  # Ubuntu 24.04 LTS ARM64 us-east-1
 
-  # AMI Family for Ubuntu
   amiFamily: Custom
 
-  # Instance Profile for nodes
   role: KarpenterNodeRole-openclaw-prod
 
-  # Subnet selection - use private subnets
   subnetSelectorTerms:
     - tags:
         karpenter.sh/discovery: openclaw-prod
-        aws:cloudformation:logical-id: PrivateSubnet*
+        aws:cloudformation:logical-id: SubnetPrivate*
 
-  # Security Group selection
   securityGroupSelectorTerms:
     - tags:
         karpenter.sh/discovery: openclaw-prod
         aws:eks:cluster-name: openclaw-prod
 
-  # Block device mappings - larger volume for Kata
   blockDeviceMappings:
     - deviceName: /dev/sda1
       ebs:
@@ -37,143 +31,114 @@ spec:
         iops: 3000
         throughput: 125
 
-  # Complete Kata Containers setup user data
   userData: |
     #!/bin/bash
     set -euo pipefail
 
-    # Logging setup
-    LOG_FILE="/var/log/kata-devmapper-setup.log"
+    LOG_FILE="/var/log/kata-bootstrap.log"
     exec > >(tee -a "$LOG_FILE") 2>&1
 
-    echo "=== Kata Devmapper Setup Started at $(date) ==="
+    echo "=== Kata Node Bootstrap Started at $(date) ==="
 
-    # Step 1: Update apt and install required packages
-    echo "Step 1: Installing required packages..."
-    apt update
-    apt install -y bc lvm2
+    # ---- Phase 1: Devmapper setup (before bootstrap, no containerd dependency) ----
+    echo "Phase 1: Installing packages and creating devmapper thin pool..."
+    apt-get update -qq
+    apt-get install -y -qq bc lvm2
 
-    # Step 2-3: Create devmapper thin pool
-    echo "Step 2-3: Creating devmapper thin pool..."
     DATA_DIR=/var/lib/containerd/io.containerd.snapshotter.v1.devmapper
     POOL_NAME=devpool
-
     mkdir -p ${DATA_DIR}
 
-    # Create 350G data file and 40G metadata file
-    touch "${DATA_DIR}/data"
-    truncate -s 350G "${DATA_DIR}/data"
-    touch "${DATA_DIR}/meta"
-    truncate -s 40G "${DATA_DIR}/meta"
+    touch "${DATA_DIR}/data" && truncate -s 350G "${DATA_DIR}/data"
+    touch "${DATA_DIR}/meta" && truncate -s 40G "${DATA_DIR}/meta"
 
-    # Setup loop devices
     DATA_DEV=$(losetup --find --show "${DATA_DIR}/data")
     META_DEV=$(losetup --find --show "${DATA_DIR}/meta")
 
-    # Calculate sectors
     SECTOR_SIZE=512
     DATA_SIZE="$(blockdev --getsize64 -q ${DATA_DEV})"
     LENGTH_IN_SECTORS=$(bc <<< "${DATA_SIZE}/${SECTOR_SIZE}")
-    DATA_BLOCK_SIZE=128
-    LOW_WATER_MARK=32768
 
-    # Create thin-pool device
     dmsetup create "${POOL_NAME}" \
-        --table "0 ${LENGTH_IN_SECTORS} thin-pool ${META_DEV} ${DATA_DEV} ${DATA_BLOCK_SIZE} ${LOW_WATER_MARK}"
+        --table "0 ${LENGTH_IN_SECTORS} thin-pool ${META_DEV} ${DATA_DEV} 128 32768"
+    echo "Thin pool created:" && dmsetup ls
 
-    echo "Thin pool created:"
-    dmsetup ls
+    # ---- Phase 2: EKS Bootstrap ----
+    echo "Phase 2: Running EKS bootstrap..."
+    CLUSTER_NAME="openclaw-prod"
+    API_SERVER_URL="https://3D720C8E9D9340A90015EF5E4FCDF21E.gr7.us-east-1.eks.amazonaws.com"
+    B64_CLUSTER_CA="LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURCVENDQWUyZ0F3SUJBZ0lJQjVTUGZMYkNET3N3RFFZSktvWklodmNOQVFFTEJRQXdGVEVUTUJFR0ExVUUKQXhNS2EzVmlaWEp1WlhSbGN6QWVGdzB5TmpBek1UUXdNVEE1TVRWYUZ3MHpOakF6TVRFd01URTBNVFZhTUJVeApFekFSQmdOVkJBTVRDbXQxWW1WeWJtVjBaWE13Z2dFaU1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLCkFvSUJBUUMxOFBMVzBKTkUzNm9WcmJCWHM4ek1kSHVEWG1ZYWxMOFV2N0RhZFNpcEhTMUV4K3pzQXZPRTVGL08KaEpRVGxkM2RqbktTQUxSSUN3bmljdW0rYVpxNjZ5bGlZMUNhNG5XOFR5ajFrMDlWR05ib0QyNExzM0dTZHZvQwp6OHM4WWpzSnRzUzB3UVdTNDMzVEJKYUxWRGNieHAxcHhvaU5oV0hGZ3JES0FtR040RHNseUhiVnJYZW5FQWlyCkRDT3dYdHZuRmpzU2FORDNUc3NzcGFJMEJCczJFaG5UcjVXSUsvQVdEZDNvQzAydVorUzRaTktqTWVkd1V5ZTMKbWRrOXR6a0pYR3IzaStWQjNPVUFhK0hIVzBGOStiblVYSG1lR1JBb0VIVmFnTmhNNFd2aVcvSUgxcUE3TVVUOQpCUGltLy9SVVE4ekF4RmNVRldBamx4RFIxWnk5QWdNQkFBR2pXVEJYTUE0R0ExVWREd0VCL3dRRUF3SUNwREFQCkJnTlZIUk1CQWY4RUJUQURBUUgvTUIwR0ExVWREZ1FXQkJRRVMwZVYwd0t0UytYUzV0SDE2a3dab1hQb0ZUQVYKQmdOVkhSRUVEakFNZ2dwcmRXSmxjbTVsZEdWek1BMEdDU3FHU0liM0RRRUJDd1VBQTRJQkFRQ3ZYREU5T3FZSwpSY3h6Y0xJbDc5SWZINGlldjBsQmFYbCtLVGxKWDdMcC9Yd1UvVmltaXk1eHg3SXRvdTBBa1VrUlU5MjVQSzJGClRRa0k2ZXNXVHViNjFaTGtPSkQrQmNjSFh2TFpydjR5ejVYc1puUitBZnlVcjViczFkT1Z2SHRrVmdWaFhKd0sKSnpZT1lUdWg0OE9MeG1qdmpzbGQ3elpkaGVBc0JaQjdEK2tYTWZSbTFLTlVieEF2RGJ3NFd5VFZUbGZ4MWU0dwpMWlhnOCtyTUtna2JTYjhmenpoZjNWckZCK3dHMDRpZ3hrdmRsM2M5RVdEVlYvR25zWFZYN2hQRTcyU0c0Ym94Ci9vK1pzYVhYbkl5QldvSjVOdm5XRWVFK0hZNmhDT3NpMlZvRm5pcTJVOXVKVVRVdmd0YzlyTXh5VFZwQ2lwWVUKdmFHcUc2WXQvRUlxCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K"
+    NODE_LABELS="workload-type=kata,katacontainers.io/kata-runtime=true,arch=arm64,os=ubuntu,managed-by=karpenter"
 
-    # Step 4-6: Configure containerd for Kata with devmapper
-    echo "Step 4-6: Configuring containerd..."
+    /etc/eks/bootstrap.sh "${CLUSTER_NAME}" \
+      --b64-cluster-ca "${B64_CLUSTER_CA}" \
+      --apiserver-endpoint "${API_SERVER_URL}" \
+      --kubelet-extra-args "--node-labels=${NODE_LABELS}" \
+      --container-runtime containerd
 
-    # Wait for containerd config to exist (from Karpenter bootstrap)
-    while [ ! -f /etc/containerd/config.toml ]; do
-      echo "Waiting for containerd config..."
-      sleep 5
-    done
+    echo "EKS bootstrap completed"
 
-    # Backup original config
+    # ---- Phase 3: Configure containerd for Kata ----
+    echo "Phase 3: Configuring containerd for Kata..."
     cp /etc/containerd/config.toml /etc/containerd/config.toml.backup
 
-    # Append devmapper and kata-fc configuration
     cat >> /etc/containerd/config.toml << 'EOFCONTAINERD'
 
-    # Devmapper snapshotter configuration
+    # Devmapper snapshotter
     [plugins."io.containerd.snapshotter.v1.devmapper"]
       pool_name = "devpool"
       root_path = "/var/lib/containerd/io.containerd.snapshotter.v1.devmapper"
       base_image_size = "40GB"
 
-    # Kata Containers with Firecracker runtime
+    # Kata Firecracker runtime
     [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc]
       snapshotter = "devmapper"
       runtime_type = "io.containerd.kata-fc.v2"
 
-    # Kata Containers with QEMU runtime (for EFS support)
+    # Kata QEMU runtime
     [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu]
       snapshotter = "devmapper"
       runtime_type = "io.containerd.kata-qemu.v2"
     EOFCONTAINERD
 
-    # Restart containerd to apply changes
     systemctl restart containerd
     sleep 10
+    echo "Containerd restarted with Kata config"
+    ctr plugins ls | grep devmapper || echo "Warning: devmapper not ready yet"
 
-    echo "Containerd restarted and configured"
-
-    # Step 7: Verify snapshotter
-    echo "Step 7: Verifying snapshotter..."
-    ctr plugins ls | grep devmapper || echo "Warning: devmapper plugin not listed yet"
-
-    # Create reload script for reboots
-    echo "Creating devmapper reload script..."
+    # ---- Phase 4: Devmapper reload service ----
     cat > /usr/local/bin/reload-devmapper.sh << 'EOFRELOAD'
     #!/bin/bash
     set -e
-
     DATA_DIR=/var/lib/containerd/io.containerd.snapshotter.v1.devmapper
     POOL_NAME=devpool
-
-    # Exit if pool already exists
     if dmsetup ls | grep -q ${POOL_NAME}; then exit 0; fi
-
-    # Recreate loop devices and thin pool
     DATA_DEV=$(losetup --find --show "${DATA_DIR}/data")
     META_DEV=$(losetup --find --show "${DATA_DIR}/meta")
-    SECTOR_SIZE=512
     DATA_SIZE=$(blockdev --getsize64 -q ${DATA_DEV})
-    LENGTH_IN_SECTORS=$(bc <<< "${DATA_SIZE}/${SECTOR_SIZE}")
-
+    LENGTH_IN_SECTORS=$(bc <<< "${DATA_SIZE}/512")
     dmsetup create "${POOL_NAME}" \
         --table "0 ${LENGTH_IN_SECTORS} thin-pool ${META_DEV} ${DATA_DEV} 128 32768"
     EOFRELOAD
-
     chmod +x /usr/local/bin/reload-devmapper.sh
 
-    # Create systemd service
     cat > /etc/systemd/system/devmapper-reload.service << 'EOFSERVICE'
     [Unit]
     Description=Reload devmapper for Kata
     After=local-fs.target
     Before=containerd.service
-
     [Service]
     Type=oneshot
     RemainAfterExit=yes
     ExecStart=/usr/local/bin/reload-devmapper.sh
-
     [Install]
     WantedBy=multi-user.target
     EOFSERVICE
-
     systemctl daemon-reload
     systemctl enable devmapper-reload.service
 
-    echo "=== Kata Devmapper Setup Completed at $(date) ==="
-    echo "Node is ready for Kata Containers with Firecracker runtime"
+    echo "=== Kata Node Bootstrap Completed at $(date) ==="
 
-  # Tags for AWS resources
   tags:
     Name: openclaw-kata-karpenter
     Environment: production
@@ -182,7 +147,6 @@ spec:
     Runtime: kata-containers
     Hypervisor: firecracker
 
-  # Metadata options
   metadataOptions:
     httpEndpoint: enabled
     httpProtocolIPv6: disabled
