@@ -56,30 +56,34 @@ echo ""
 echo -e "${BLUE}[1/9] Installing OpenClaw Operator...${NC}"
 
 OPERATOR_DIR="$(dirname "$0")/../../openclaw-operator"
-if [ ! -d "$OPERATOR_DIR" ]; then
-  echo -e "${YELLOW}⚠️  Operator directory not found: $OPERATOR_DIR${NC}"
+if [ ! -d "$OPERATOR_DIR/charts/openclaw-operator" ]; then
+  echo -e "${YELLOW}⚠️  Operator chart not found: $OPERATOR_DIR/charts/openclaw-operator${NC}"
   echo "Skipping operator installation (deploy manually later)"
 else
   cd "$OPERATOR_DIR"
+  OPERATOR_VERSION=$(grep '^appVersion:' charts/openclaw-operator/Chart.yaml | awk '{print $2}')
+  echo "Operator chart version: v${OPERATOR_VERSION}"
 
-  if [ -d "charts/openclaw-operator" ]; then
-    # China regions cannot access ghcr.io; use ECR mirror instead
-    HELM_EXTRA_ARGS=""
-    if [[ "$AWS_REGION" == cn-* ]]; then
-      HELM_EXTRA_ARGS="--set image.repository=public.ecr.aws/u6t0z4w2/openclaw --set image.tag=2026.3.13-1"
-    fi
-
-    helm upgrade --install openclaw-operator charts/openclaw-operator \
-      --namespace openclaw-operator-system \
-      --create-namespace \
-      --wait \
-      $HELM_EXTRA_ARGS
-    echo -e "${GREEN}✅ OpenClaw Operator installed${NC}"
-  else
-    echo "Using kustomize deployment..."
-    kubectl apply -k config/default
-    echo -e "${GREEN}✅ OpenClaw Operator installed (kustomize)${NC}"
+  # Update CRD first (kubectl apply may fail if annotations too large, use replace as fallback)
+  if [ -f "config/crd/bases/openclaw.rocks_openclawinstances.yaml" ]; then
+    echo "Updating CRD..."
+    kubectl apply -f config/crd/bases/openclaw.rocks_openclawinstances.yaml 2>/dev/null \
+      || kubectl replace -f config/crd/bases/openclaw.rocks_openclawinstances.yaml 2>/dev/null \
+      || echo -e "${YELLOW}⚠️  CRD update skipped (will be created by helm)${NC}"
   fi
+
+  # China regions cannot access ghcr.io; use ECR mirror instead
+  HELM_EXTRA_ARGS=""
+  if [[ "$AWS_REGION" == cn-* ]]; then
+    HELM_EXTRA_ARGS="--set image.repository=public.ecr.aws/u6t0z4w2/openclaw --set image.tag=2026.3.13-1"
+  fi
+
+  helm upgrade --install openclaw-operator charts/openclaw-operator \
+    --namespace openclaw-operator-system \
+    --create-namespace \
+    --wait \
+    $HELM_EXTRA_ARGS
+  echo -e "${GREEN}✅ OpenClaw Operator v${OPERATOR_VERSION} installed${NC}"
 
   cd - > /dev/null
 fi
