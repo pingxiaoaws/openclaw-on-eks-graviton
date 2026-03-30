@@ -296,7 +296,7 @@ if [ $ERRORS -eq 0 ] && [ $WARNINGS -eq 0 ]; then
   echo "Your OpenClaw platform is ready."
   echo ""
   echo "Next Steps:"
-  echo "  1. Run: ./04-deploy-provisioning-service.sh (Deploy Operator + Provisioning Service)"
+  echo "  1. Run: ./05-deploy-application-stack-db.sh (Deploy Operator + Provisioning Service)"
   echo "  2. Create test OpenClaw instance: kubectl apply -f openclaw-kata-bedrock.yaml"
   echo "  3. Setup Cognito and CloudFront (Phase 3)"
 elif [ $ERRORS -eq 0 ]; then
