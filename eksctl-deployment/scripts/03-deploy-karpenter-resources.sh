@@ -274,6 +274,51 @@ else
 fi
 
 if [ -f "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml" ]; then
+    print_info "Updating kata-metal NodeClass with current cluster info..."
+
+    # Get current cluster endpoint and CA
+    CLUSTER_ENDPOINT=$(aws eks describe-cluster --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --query "cluster.endpoint" --output text)
+    CLUSTER_CA=$(aws eks describe-cluster --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --query "cluster.certificateAuthority.data" --output text)
+
+    if [ -z "$CLUSTER_ENDPOINT" ] || [ "$CLUSTER_ENDPOINT" == "None" ]; then
+        print_error "Failed to get cluster endpoint"
+        exit 1
+    fi
+
+    if [ -z "$CLUSTER_CA" ] || [ "$CLUSTER_CA" == "None" ]; then
+        print_error "Failed to get cluster CA certificate"
+        exit 1
+    fi
+
+    print_info "Cluster endpoint: ${CLUSTER_ENDPOINT}"
+    print_info "CA certificate: ${CLUSTER_CA:0:40}..."
+
+    # Backup original file if it has placeholders (first time run)
+    if grep -q "{{CLUSTER_NAME}}" "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml"; then
+        print_info "Detected template placeholders, backing up original..."
+        cp "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml" "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml.template"
+    fi
+
+    # Replace placeholders directly in the file
+    sed -i.bak \
+      -e "s|{{CLUSTER_NAME}}|${CLUSTER_NAME}|g" \
+      -e "s|{{API_SERVER_URL}}|${CLUSTER_ENDPOINT}|g" \
+      -e "s|{{B64_CLUSTER_CA}}|${CLUSTER_CA}|g" \
+      "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml"
+
+    # Also update if values were already substituted from previous run
+    sed -i.bak \
+      -e "s|CLUSTER_NAME=\"[^\"]*\"|CLUSTER_NAME=\"${CLUSTER_NAME}\"|g" \
+      -e "s|API_SERVER_URL=\"https://[^\"]*\"|API_SERVER_URL=\"${CLUSTER_ENDPOINT}\"|g" \
+      -e "s|B64_CLUSTER_CA=\"[^\"]*\"|B64_CLUSTER_CA=\"${CLUSTER_CA}\"|g" \
+      "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml"
+
+    # Remove sed backup file
+    rm -f "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml.bak"
+
+    print_status "Updated kata-metal NodeClass file with current cluster info"
+
+    # Apply the updated NodeClass
     kubectl apply -f "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml"
     print_status "Applied kata-metal NodeClass"
 fi
