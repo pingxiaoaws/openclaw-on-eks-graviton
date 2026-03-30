@@ -524,6 +524,25 @@ echo -e "${GREEN}✅ Provisioning service deployed${NC}"
 echo ""
 
 # ============================================================================
+# Step 6.5: Configure Billing Service
+# ============================================================================
+
+echo -e "${BLUE}[6.5/9] Configuring Billing Service...${NC}"
+
+echo "Setting billing sidecar image on openclaw-provisioning deployment..."
+kubectl set env deployment openclaw-provisioning -n openclaw-provisioning \
+  BILLING_SIDECAR_IMAGE="public.ecr.aws/u6t0z4w2/billing-sidecar:latest"
+
+echo "Restarting openclaw-provisioning deployment to apply billing configuration..."
+kubectl rollout restart deployment openclaw-provisioning -n openclaw-provisioning
+
+echo "Waiting for deployment to complete..."
+kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning --timeout=300s
+
+echo -e "${GREEN}✅ Billing service configured${NC}"
+echo ""
+
+# ============================================================================
 # Step 7: Create Shared Internet-Facing ALB
 # ============================================================================
 

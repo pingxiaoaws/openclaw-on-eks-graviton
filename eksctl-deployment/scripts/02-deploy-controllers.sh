@@ -523,69 +523,60 @@ echo "To install Karpenter later, see: https://karpenter.sh/docs/getting-started
 echo ""
 
 # ============================================================================
-# Step 7: Install Kata Containers (if Kata nodes exist)
+# Step 7: Install Kata Containers (always install, nodes will join later)
 # ============================================================================
 
 echo -e "${BLUE}[7/8] Installing Kata Containers...${NC}"
 
-# Check if Kata nodes exist
+# Always install Kata components (don't wait for nodes)
+echo "Installing Kata RBAC and DaemonSet..."
+echo "  (Kata nodes will be provisioned by Karpenter when needed)"
+
+# Step 7.1: Install Kata RBAC with CRD permissions
+echo ""
+echo "Installing Kata RBAC..."
+kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-rbac.yaml"
+
+# Step 7.2: Deploy Kata DaemonSet
+echo ""
+echo "Deploying Kata DaemonSet..."
+kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-daemonset.yaml"
+
+# Step 7.3: Check if any Kata nodes exist
 KATA_NODE_COUNT=$(kubectl get nodes -l workload-type=kata --no-headers 2>/dev/null | wc -l | tr -d ' ')
 
-if [ "$KATA_NODE_COUNT" -eq 0 ]; then
-  echo -e "${YELLOW}⚠️  No Kata nodes found, skipping Kata installation${NC}"
-  echo "   (Cluster was deployed without Kata support)"
-else
-  echo "Found $KATA_NODE_COUNT Kata node(s), installing Kata Containers..."
-
-  # Wait for Kata nodes to be Ready
-  echo "Waiting for Kata nodes to be ready..."
-  kubectl wait --for=condition=Ready nodes -l workload-type=kata --timeout=600s || \
-    echo "  (Some nodes may still be initializing)"
-
-  # Step 7.1: Install Kata RBAC with CRD permissions
+if [ "$KATA_NODE_COUNT" -gt 0 ]; then
   echo ""
-  echo "Installing Kata RBAC..."
-  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-rbac.yaml"
-
-  # Step 7.2: Deploy Kata DaemonSet (fixed version)
-  echo ""
-  echo "Deploying Kata DaemonSet..."
-  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-daemonset.yaml"
-
-  # Step 7.3: Wait for Kata pods to be ready
-  echo ""
-  echo "Waiting for Kata deployment to complete (this may take 5-10 minutes)..."
+  echo "Found $KATA_NODE_COUNT existing Kata node(s), waiting for Kata pods..."
   kubectl -n kube-system wait --timeout=10m --for=condition=Ready -l name=kata-deploy pod || \
     echo "  (Kata pods still initializing, check status with: kubectl get pods -n kube-system -l name=kata-deploy)"
 
-  # Step 7.4: Verify Kata pods
   echo ""
   echo "Kata pods status:"
   kubectl get pods -n kube-system -l name=kata-deploy -o wide
-
-  echo -e "${GREEN}✅ Kata Containers installed${NC}"
-  echo "   Pods: Running on $KATA_NODE_COUNT node(s)"
+else
+  echo ""
+  echo "No Kata nodes yet (Karpenter will create them when needed)"
+  echo "  DaemonSet will automatically deploy to nodes when they join"
 fi
+
+echo -e "${GREEN}✅ Kata Containers components installed${NC}"
 
 echo ""
 
 # ============================================================================
-# Step 8: Create/Verify Kata RuntimeClasses
+# Step 8: Create Kata RuntimeClasses (always create)
 # ============================================================================
 
 echo -e "${BLUE}[8/8] Creating Kata RuntimeClasses...${NC}"
 
-if [ "$KATA_NODE_COUNT" -gt 0 ]; then
-  # Create Kata RuntimeClasses
-  echo "Creating Kata RuntimeClasses..."
-  kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-runtimeclasses.yaml"
+# Always create RuntimeClasses (required for Karpenter to provision Kata nodes)
+echo "Creating Kata RuntimeClasses..."
+kubectl apply -f "${TEMPLATE_DIR}/k8s-manifests/kata-runtimeclasses.yaml"
 
-  echo ""
-  echo "Available RuntimeClasses:"
-  kubectl get runtimeclass | grep kata || echo "  (No kata runtimeclasses found)"
-else
-  echo -e "${YELLOW}⚠️  No Kata nodes, skipping RuntimeClass creation${NC}"
-fi
+echo ""
+echo "Available RuntimeClasses:"
+kubectl get runtimeclass | grep kata || echo "  (RuntimeClasses created but nodes not joined yet)"
 
 echo -e "${GREEN}✅ RuntimeClasses configured${NC}"
 echo ""
@@ -604,25 +595,16 @@ echo "  ✅ EFS StorageClass: efs-sc (ReadWriteMany, cross-AZ)"
 echo "  ✅ EBS StorageClass: gp3 (ReadWriteOnce, high-performance)"
 echo "  ✅ AWS Load Balancer Controller"
 
+echo "  ✅ Kata Containers (DaemonSet ready, will auto-deploy to nodes)"
+echo "  ✅ Kata RuntimeClasses (kata-fc, kata-qemu)"
+KATA_NODE_COUNT=$(kubectl get nodes -l workload-type=kata --no-headers 2>/dev/null | wc -l | tr -d ' ')
 if [ "$KATA_NODE_COUNT" -gt 0 ]; then
-  echo "  ✅ Kata Containers (DaemonSet on $KATA_NODE_COUNT node(s))"
-  echo "  ✅ Kata RuntimeClasses (kata-fc, kata-qemu, etc.)"
+  echo "     Active Kata nodes: $KATA_NODE_COUNT"
 else
-  echo "  ⊗ Kata Containers (not installed - no Kata nodes)"
+  echo "     Note: Karpenter will create Kata nodes when workloads require them"
 fi
 
 echo ""
 echo "Note: Karpenter skipped (using Managed Node Groups)"
 echo ""
-echo "Next Steps:"
-echo "  1. Run: ./03-verify-deployment.sh  (Verify installation)"
 
-# Detect region and suggest appropriate deployment script
-if [[ "$AWS_REGION" == cn-* ]]; then
-  echo "  2. Deploy Application Stack (China Region): ./04-deploy-application-stack-db.sh"
-  echo "     (Uses PostgreSQL for session storage, no Cognito)"
-else
-  echo "  2. Deploy Application Stack (Global Region): ./04-deploy-application-stack-cognito.sh"
-  echo "     (Uses Cognito for authentication)"
-fi
-echo ""
