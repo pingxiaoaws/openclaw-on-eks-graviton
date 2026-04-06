@@ -49,7 +49,7 @@ class Config:
         'resources': {
             'requests': {
                 'cpu': os.environ.get('OPENCLAW_CPU_REQUEST', '600m'),
-                'memory': os.environ.get('OPENCLAW_MEMORY_REQUEST', '1.2Gi')
+                'memory': os.environ.get('OPENCLAW_MEMORY_REQUEST', '1200Mi')
             },
             'limits': {
                 'cpu': os.environ.get('OPENCLAW_CPU_LIMIT', '2'),

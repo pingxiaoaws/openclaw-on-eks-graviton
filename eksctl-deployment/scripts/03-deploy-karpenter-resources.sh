@@ -259,15 +259,48 @@ echo ""
 # Step 5: Deploy NodePool and EC2NodeClass
 echo -e "${BLUE}[7/7] Deploying NodePool and EC2NodeClass...${NC}"
 
+# Get availability zones for current region
+print_info "Detecting availability zones for region ${AWS_DEFAULT_REGION}..."
+AVAILABLE_ZONES=$(aws ec2 describe-availability-zones \
+    --region ${AWS_DEFAULT_REGION} \
+    --filters "Name=state,Values=available" \
+    --query 'AvailabilityZones[?ZoneType==`availability-zone`].ZoneName' \
+    --output text | tr '\t' '\n' | head -3 | tr '\n' ',' | sed 's/,$//')
+
+if [ -z "$AVAILABLE_ZONES" ]; then
+    print_error "Failed to detect availability zones"
+    exit 1
+fi
+
+# Convert to YAML array format
+ZONES_ARRAY=$(echo "$AVAILABLE_ZONES" | awk -F',' '{for(i=1;i<=NF;i++) printf "\"%s\", ", $i}' | sed 's/, $//')
+print_status "Detected zones: ${AVAILABLE_ZONES}"
+
+# Deploy standard-arm64 NodeClass
 if [ -f "${CONFIG_DIR}/karpenter-standard-nodeclass.yaml" ]; then
-    kubectl apply -f "${CONFIG_DIR}/karpenter-standard-nodeclass.yaml"
+    print_info "Updating standard-arm64 NodeClass with cluster info..."
+
+    # Create temporary file with replacements
+    sed \
+      -e "s/openclaw-prod/${CLUSTER_NAME}/g" \
+      "${CONFIG_DIR}/karpenter-standard-nodeclass.yaml" > /tmp/karpenter-standard-nodeclass.yaml
+
+    kubectl apply -f /tmp/karpenter-standard-nodeclass.yaml
     print_status "Applied standard-arm64 NodeClass"
 else
     print_warning "Standard NodeClass not found, skipping"
 fi
 
+# Deploy standard-arm64 NodePool
 if [ -f "${CONFIG_DIR}/karpenter-standard-nodepool.yaml" ]; then
-    kubectl apply -f "${CONFIG_DIR}/karpenter-standard-nodepool.yaml"
+    print_info "Updating standard-arm64 NodePool with availability zones..."
+
+    # Create temporary file with zone replacements
+    sed \
+      -e "s/values: \[\"us-east-1a\", \"us-east-1b\", \"us-east-1c\"\]/values: [${ZONES_ARRAY}]/g" \
+      "${CONFIG_DIR}/karpenter-standard-nodepool.yaml" > /tmp/karpenter-standard-nodepool.yaml
+
+    kubectl apply -f /tmp/karpenter-standard-nodepool.yaml
     print_status "Applied standard-arm64 NodePool"
 else
     print_warning "Standard NodePool not found, skipping"
@@ -275,6 +308,22 @@ fi
 
 if [ -f "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml" ]; then
     print_info "Updating kata-metal NodeClass with current cluster info..."
+
+    # Ubuntu EKS Node OS 24.04 LTS ARM64 AMI mapping (region-specific)
+    # Must use "ubuntu-eks" AMIs which contain /etc/eks/bootstrap.sh
+    declare -A KATA_AMI_MAP=(
+        ["us-east-1"]="ami-03fd8f02d5b4488c8"
+        ["us-west-2"]="ami-03d4c7770e769df90"
+    )
+
+    # Select AMI based on region
+    KATA_AMI_ID="${KATA_AMI_MAP[${AWS_DEFAULT_REGION}]:-}"
+    if [ -z "$KATA_AMI_ID" ]; then
+        print_error "No Kata AMI configured for region ${AWS_DEFAULT_REGION}"
+        print_error "Please add AMI ID to KATA_AMI_MAP in this script"
+        exit 1
+    fi
+    print_info "Using Ubuntu EKS AMI for ${AWS_DEFAULT_REGION}: ${KATA_AMI_ID}"
 
     # Get current cluster endpoint and CA
     CLUSTER_ENDPOINT=$(aws eks describe-cluster --name ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --query "cluster.endpoint" --output text)
@@ -292,39 +341,39 @@ if [ -f "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml" ]; then
 
     print_info "Cluster endpoint: ${CLUSTER_ENDPOINT}"
     print_info "CA certificate: ${CLUSTER_CA:0:40}..."
+    print_info "Kata AMI ID: ${KATA_AMI_ID}"
 
-    # Backup original file if it has placeholders (first time run)
-    if grep -q "{{CLUSTER_NAME}}" "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml"; then
-        print_info "Detected template placeholders, backing up original..."
-        cp "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml" "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml.template"
-    fi
-
-    # Replace placeholders directly in the file
-    sed -i.bak \
+    # Create temporary file with all replacements
+    sed \
+      -e "s|{{KATA_AMI_ID}}|${KATA_AMI_ID}|g" \
       -e "s|{{CLUSTER_NAME}}|${CLUSTER_NAME}|g" \
       -e "s|{{API_SERVER_URL}}|${CLUSTER_ENDPOINT}|g" \
       -e "s|{{B64_CLUSTER_CA}}|${CLUSTER_CA}|g" \
-      "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml"
-
-    # Also update if values were already substituted from previous run
-    sed -i.bak \
+      -e "s|id: ami-[a-z0-9]*  # Ubuntu|id: ${KATA_AMI_ID}  # Ubuntu|g" \
       -e "s|CLUSTER_NAME=\"[^\"]*\"|CLUSTER_NAME=\"${CLUSTER_NAME}\"|g" \
       -e "s|API_SERVER_URL=\"https://[^\"]*\"|API_SERVER_URL=\"${CLUSTER_ENDPOINT}\"|g" \
       -e "s|B64_CLUSTER_CA=\"[^\"]*\"|B64_CLUSTER_CA=\"${CLUSTER_CA}\"|g" \
-      "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml"
+      -e "s|KarpenterNodeRole-openclaw-prod|KarpenterNodeRole-${CLUSTER_NAME}|g" \
+      -e "s|karpenter.sh/discovery: openclaw-prod|karpenter.sh/discovery: ${CLUSTER_NAME}|g" \
+      -e "s|aws:eks:cluster-name: openclaw-prod|aws:eks:cluster-name: ${CLUSTER_NAME}|g" \
+      "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml" > /tmp/karpenter-kata-nodeclass.yaml
 
-    # Remove sed backup file
-    rm -f "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml.bak"
+    print_status "Created kata-metal NodeClass with current cluster info"
 
-    print_status "Updated kata-metal NodeClass file with current cluster info"
-
-    # Apply the updated NodeClass
-    kubectl apply -f "${CONFIG_DIR}/karpenter-kata-nodeclass.yaml"
+    # Apply the temporary file
+    kubectl apply -f /tmp/karpenter-kata-nodeclass.yaml
     print_status "Applied kata-metal NodeClass"
 fi
 
 if [ -f "${CONFIG_DIR}/karpenter-kata-nodepool.yaml" ]; then
-    kubectl apply -f "${CONFIG_DIR}/karpenter-kata-nodepool.yaml"
+    print_info "Updating kata-metal NodePool with availability zones..."
+
+    # Create temporary file with zone replacements
+    sed \
+      -e "s/values: \[\"us-east-1a\", \"us-east-1b\", \"us-east-1c\"\]/values: [${ZONES_ARRAY}]/g" \
+      "${CONFIG_DIR}/karpenter-kata-nodepool.yaml" > /tmp/karpenter-kata-nodepool.yaml
+
+    kubectl apply -f /tmp/karpenter-kata-nodepool.yaml
     print_status "Applied kata-metal NodePool"
 fi
 

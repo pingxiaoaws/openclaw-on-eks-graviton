@@ -508,7 +508,7 @@ if [[ "$AWS_REGION" == cn-* ]]; then
   OPENCLAW_IMG_TAG="2026.3.13-1"
 else
   OPENCLAW_IMG_REPO=""
-  OPENCLAW_IMG_TAG=""
+  OPENCLAW_IMG_TAG="2026.3.1"
 fi
 export PROVISIONING_IMAGE BEDROCK_ROLE_ARN CLUSTER_NAME AWS_REGION AWS_ACCOUNT OPENCLAW_IMG_REPO OPENCLAW_IMG_TAG
 envsubst < "${TEMPLATE_DIR}/k8s-manifests/provisioning-deployment-db.yaml.tpl" | kubectl apply -f -
