@@ -5,7 +5,7 @@ metadata:
   name: kata-metal
 spec:
   amiSelectorTerms:
-    - id: ami-03fd8f02d5b4488c8  # Ubuntu 24.04 LTS ARM64 us-east-1
+    - id: {{KATA_AMI_ID}}  # Ubuntu EKS Node OS 24.04 LTS ARM64 (region-specific)
 
   amiFamily: Custom
 
