@@ -40,8 +40,28 @@ echo -e "${BLUE}[2/7] Setting up environment variables...${NC}"
 export KARPENTER_NAMESPACE="kube-system"
 export KARPENTER_VERSION="1.9.0"
 export CLUSTER_NAME=$(kubectl config current-context | cut -d'/' -f2)
+
+# Extract region from kubectl context, fallback to AWS config
 export AWS_DEFAULT_REGION=$(kubectl config current-context | cut -d':' -f4)
-export AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --query Account --output text)}}
+if [ -z "$AWS_DEFAULT_REGION" ] || [ "$AWS_DEFAULT_REGION" == "$CLUSTER_NAME" ]; then
+    export AWS_DEFAULT_REGION=$(aws configure get region)
+fi
+
+if [ -z "$AWS_DEFAULT_REGION" ]; then
+    print_error "Failed to determine AWS region"
+    print_info "Please set AWS_DEFAULT_REGION environment variable or configure AWS CLI"
+    exit 1
+fi
+
+# Get AWS Account ID with explicit region
+export AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-${AWS_ACCOUNT:-$(aws sts get-caller-identity --region "${AWS_DEFAULT_REGION}" --query Account --output text)}}
+
+if [ -z "$AWS_ACCOUNT_ID" ]; then
+    print_error "Failed to get AWS Account ID"
+    print_info "Please ensure AWS credentials are configured correctly"
+    exit 1
+fi
+
 if [[ "$AWS_DEFAULT_REGION" == cn-* ]]; then
   export AWS_PARTITION="aws-cn"
 else
