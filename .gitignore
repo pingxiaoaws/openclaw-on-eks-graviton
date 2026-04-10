@@ -39,3 +39,6 @@ openclaw-operator/testbin/
 .envrc
 .env
 *.local
+DEPLOYMENT-CHANGES-V2.md
+DEPLOYMENT-CHANGES.md
+WORKSHOP-FAQ.md

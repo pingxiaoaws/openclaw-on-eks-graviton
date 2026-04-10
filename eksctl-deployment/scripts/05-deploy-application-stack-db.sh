@@ -127,6 +127,21 @@ else
         "aws-marketplace:ViewSubscriptions"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "S3UserFilesAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": [
+        "arn:${AWS_PARTITION}:s3:::openclaw-user-files-${AWS_ACCOUNT}-${AWS_REGION}",
+        "arn:${AWS_PARTITION}:s3:::openclaw-user-files-${AWS_ACCOUNT}-${AWS_REGION}/*"
+      ]
     }
   ]
 }
@@ -450,7 +465,7 @@ if [[ "$BUILD_IMAGE" =~ ^[Yy](es)?$ ]]; then
     export AWS_REGION
     export AWS_ACCOUNT
     "$BUILD_SCRIPT"
-    PROVISIONING_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning-chinaregion:latest"
+    PROVISIONING_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest"
     echo -e "${GREEN}✅ Docker image built and pushed${NC}"
   else
     echo -e "${RED}❌ Build script not found: $BUILD_SCRIPT${NC}"
@@ -826,6 +841,70 @@ echo -e "${GREEN}✅ Provisioning Service fully configured${NC}"
 echo ""
 
 # ============================================================================
+# Step 10: Prepare Workshop Data (S3 bucket + resource files)
+# ============================================================================
+
+echo -e "${BLUE}[10] Preparing Workshop Data...${NC}"
+
+WORKSHOP_BUCKET="openclaw-user-files-${AWS_ACCOUNT}-${AWS_REGION}"
+RESOURCES_DIR="$(cd "${SCRIPT_DIR}/../../resources" 2>/dev/null && pwd)" || RESOURCES_DIR=""
+
+if [ -z "$RESOURCES_DIR" ] || [ ! -d "$RESOURCES_DIR" ]; then
+  echo -e "${YELLOW}⚠️  resources/ directory not found, skipping workshop setup${NC}"
+else
+  # Create S3 bucket (idempotent)
+  if aws s3api head-bucket --bucket "$WORKSHOP_BUCKET" --region "$AWS_REGION" 2>/dev/null; then
+    echo "S3 bucket already exists: $WORKSHOP_BUCKET"
+  else
+    echo "Creating S3 bucket: $WORKSHOP_BUCKET"
+    if [ "$AWS_REGION" = "us-east-1" ]; then
+      aws s3api create-bucket --bucket "$WORKSHOP_BUCKET" --region "$AWS_REGION"
+    else
+      aws s3api create-bucket --bucket "$WORKSHOP_BUCKET" --region "$AWS_REGION" \
+        --create-bucket-configuration LocationConstraint="$AWS_REGION"
+    fi
+    aws s3api put-bucket-versioning --bucket "$WORKSHOP_BUCKET" \
+      --versioning-configuration Status=Enabled
+    aws s3api put-public-access-block --bucket "$WORKSHOP_BUCKET" \
+      --public-access-block-configuration \
+      BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  fi
+
+  # Upload workshop resource files
+  UPLOAD_COUNT=0
+  for f in "$RESOURCES_DIR"/SKILL_*.md "$RESOURCES_DIR"/*.csv; do
+    [ -f "$f" ] || continue
+    aws s3 cp "$f" "s3://${WORKSHOP_BUCKET}/workshop_data/$(basename "$f")" --quiet
+    UPLOAD_COUNT=$((UPLOAD_COUNT + 1))
+  done
+
+  if [ "$UPLOAD_COUNT" -gt 0 ]; then
+    echo -e "${GREEN}✅ Workshop data ready: $UPLOAD_COUNT files uploaded to s3://${WORKSHOP_BUCKET}/workshop_data/${NC}"
+    aws s3 ls "s3://${WORKSHOP_BUCKET}/workshop_data/" | sed 's/^/  /'
+
+    # Patch provisioning service with workshop env vars (runtimeDeps + selfConfigure)
+    echo "Patching provisioning service for workshop support..."
+    # Ensure deployment uses the private ECR image (contains env-var-driven code)
+    PRIVATE_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest"
+    kubectl set image deployment/openclaw-provisioning -n openclaw-provisioning \
+      provisioning="$PRIVATE_IMAGE"
+    kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
+      OPENCLAW_RUNTIME_PNPM=true \
+      OPENCLAW_RUNTIME_PYTHON=true \
+      OPENCLAW_SELFCONFIGURE_ACTIONS="skills,config,workspaceFiles,envVars" \
+      OPENCLAW_PIP_PACKAGES="boto3 pandas matplotlib seaborn awscli" \
+      OPENCLAW_PLUGINS="@openclaw/feishu"
+
+    kubectl rollout status deployment/openclaw-provisioning -n openclaw-provisioning --timeout=300s
+    echo -e "${GREEN}✅ Provisioning service patched for workshop${NC}"
+  else
+    echo -e "${YELLOW}⚠️  No workshop files (SKILL_*.md, *.csv) found in resources/${NC}"
+  fi
+fi
+
+echo ""
+
+# ============================================================================
 # Summary
 # ============================================================================
 
@@ -847,6 +926,13 @@ echo "🌐 Access URLs:"
 echo "  - Public URL: https://$CLOUDFRONT_DOMAIN"
 echo "  - Login: https://$CLOUDFRONT_DOMAIN/login"
 echo "  - Dashboard: https://$CLOUDFRONT_DOMAIN/dashboard"
+echo ""
+if [ -n "${WORKSHOP_BUCKET:-}" ] && [ "${UPLOAD_COUNT:-0}" -gt 0 ]; then
+echo "📚 Workshop:"
+echo "  - S3 Bucket: $WORKSHOP_BUCKET"
+echo "  - Data Path: s3://${WORKSHOP_BUCKET}/workshop_data/"
+echo ""
+fi
 echo ""
 echo "✅ All components deployed successfully!"
 echo ""
