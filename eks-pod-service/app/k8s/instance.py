@@ -174,6 +174,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         "spec": {
             "image": config['image'],
             "config": {
+                "mergeMode": "merge",
                 "raw": config_raw
             },
             "resources": config['resources'],
@@ -240,10 +241,52 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
             }
         ]
         # Enable selfConfigure to allow Pod Identity (automountServiceAccountToken=true)
-        instance_body["spec"]["selfConfigure"] = {
-            "enabled": True
-        }
-        logger.info(f"✅ Added AWS_REGION={Config.AWS_REGION} and enabled selfConfigure for Bedrock Pod Identity")
+        self_configure = {"enabled": True}
+        allowed_actions = os.environ.get('OPENCLAW_SELFCONFIGURE_ACTIONS', '')
+        if allowed_actions:
+            self_configure["allowedActions"] = [a.strip() for a in allowed_actions.split(',')]
+        instance_body["spec"]["selfConfigure"] = self_configure
+        # Enable runtime deps if configured via env
+        runtime_deps = {}
+        if os.environ.get('OPENCLAW_RUNTIME_PNPM', '').lower() == 'true':
+            runtime_deps["pnpm"] = True
+        if os.environ.get('OPENCLAW_RUNTIME_PYTHON', '').lower() == 'true':
+            runtime_deps["python"] = True
+        if runtime_deps:
+            instance_body["spec"]["runtimeDeps"] = runtime_deps
+        # Pre-install Python packages via init container if configured
+        # Uses uv (already installed by init-uv) to install into the uv-managed Python environment
+        pip_packages = os.environ.get('OPENCLAW_PIP_PACKAGES', '')
+        if pip_packages and runtime_deps.get("python"):
+            install_cmd = (
+                "UV=/data/.local/bin/uv; "
+                "PYTHON=$(find /data/.local/python/*/bin -maxdepth 1 -name 'python3.[0-9]*' ! -name '*-config' -type f 2>/dev/null | head -1); "
+                "if [ -z \"$PYTHON\" ]; then echo 'ERROR: uv-managed Python not found in /data/.local/python/*/bin'; exit 1; fi; "
+                "echo \"Using uv=$UV python=$PYTHON\"; "
+                "$UV pip install --python \"$PYTHON\" --break-system-packages " + pip_packages + "; "
+                "PYBIN=$(dirname $PYTHON); "
+                "for cmd in aws aws_completer; do "
+                "[ -f \"$PYBIN/$cmd\" ] && printf '#!/usr/bin/env python3\\nimport sys, os\\nif os.environ.get(\"LC_CTYPE\",\"\")==\"UTF-8\": os.environ[\"LC_CTYPE\"]=\"en_US.UTF-8\"\\nimport awscli.clidriver\\nsys.exit(awscli.clidriver.main())\\n' > /data/.local/bin/$cmd && chmod +x /data/.local/bin/$cmd; "
+                "done"
+            )
+            instance_body["spec"].setdefault("initContainers", []).append({
+                "name": "pip-install",
+                "image": (config['image']['repository'] or 'ghcr.io/openclaw/openclaw') + ':' + config['image']['tag'],
+                "command": ["sh", "-c", install_cmd],
+                "volumeMounts": [{"name": "data", "mountPath": "/data"}],
+                "env": [{"name": "HOME", "value": "/data"}]
+            })
+        # Pre-install plugins if configured (e.g. "@openclaw/feishu")
+        plugins = os.environ.get('OPENCLAW_PLUGINS', '')
+        if plugins:
+            instance_body["spec"]["plugins"] = [p.strip() for p in plugins.split(',') if p.strip()]
+        # Pre-install skills if configured (e.g. "pack:anthropics/skills/pptx")
+        skills = os.environ.get('OPENCLAW_SKILLS', '')
+        if skills:
+            instance_body["spec"]["skills"] = [s.strip() for s in skills.split(',') if s.strip()]
+        # Channels are configured by users at runtime via `openclaw channels add`.
+        # mergeMode: merge ensures user config persists across operator reconciles.
+        logger.info(f"✅ Added AWS_REGION={Config.AWS_REGION}, selfConfigure={self_configure}, runtimeDeps={runtime_deps}")
 
     # Add billing sidecar if enabled and image is configured
     if Config.BILLING_SIDECAR_ENABLED and Config.BILLING_SIDECAR_IMAGE:

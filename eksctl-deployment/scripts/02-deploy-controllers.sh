@@ -29,8 +29,11 @@ if [[ "$CLUSTER_CONTEXT" == arn:aws*:eks:* ]]; then
   # ARN format: arn:aws:eks:region:account:cluster/cluster-name (or arn:aws-cn:eks:...)
   AWS_REGION=$(echo "$CLUSTER_CONTEXT" | cut -d':' -f4)
   CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | cut -d'/' -f2)
-else
+elif [[ "$CLUSTER_CONTEXT" == *@*.eksctl.io ]]; then
   # eksctl format: user@cluster-name.region.eksctl.io
+  CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | sed 's/.*@//' | sed 's/\..*//')
+  AWS_REGION=$(echo "$CLUSTER_CONTEXT" | grep -oP '(?<=\.)(us(-gov)?|eu|ap|sa|ca|me|af|cn|il)-(east|west|north|south|central|northeast|southeast|northwest|southwest)-[0-9]+' | head -1)
+else
   CLUSTER_NAME=$(echo "$CLUSTER_CONTEXT" | rev | cut -d'/' -f1 | rev)
   AWS_REGION=$(echo "$CLUSTER_CONTEXT" | grep -oE 'us(-gov)?-(east|west|central)-(1|2)' | head -1)
 fi
@@ -403,15 +406,66 @@ echo ""
 
 echo -e "${BLUE}[5/8] Installing AWS Load Balancer Controller...${NC}"
 
-# Set ALB Role ARN (from CFN or default naming convention)
+# Step 5a: Create IAM Role FIRST (must exist before Pod Identity Association)
 if [ "$USE_CFN" = true ] && [ -n "$CFN_ALB_ROLE_ARN" ]; then
   ALB_ROLE_ARN="$CFN_ALB_ROLE_ARN"
   echo -e "${GREEN}Using CFN pre-provisioned ALB Controller Role: $ALB_ROLE_ARN${NC}"
 else
-  ALB_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
+  # Use local IAM policy (partition-aware: global vs China)
+  if [ "$AWS_PARTITION" = "aws-cn" ]; then
+    cp "${TEMPLATE_DIR}/iam-policies/alb-controller-policy-cn.json" /tmp/iam_policy.json
+  else
+    cp "${TEMPLATE_DIR}/iam-policies/alb-controller-policy.json" /tmp/iam_policy.json
+  fi
+
+  # Create IAM policy
+  aws iam create-policy \
+    --policy-name AWSLoadBalancerControllerIAMPolicy \
+    --policy-document file:///tmp/iam_policy.json \
+    --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
+
+  # Create IAM Role for ALB Controller (Pod Identity)
+  ALB_ROLE_NAME="AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
+  ALB_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy"
+
+  if aws iam get-role --role-name "$ALB_ROLE_NAME" &>/dev/null; then
+    echo -e "${YELLOW}⚠️  ALB Controller Role already exists${NC}"
+  else
+    echo "Creating ALB Controller IAM role with Pod Identity trust policy..."
+    cat > /tmp/alb-trust-policy.json <<EOFTRUST
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "pods.eks.amazonaws.com"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }
+  ]
+}
+EOFTRUST
+
+    aws iam create-role \
+      --role-name "$ALB_ROLE_NAME" \
+      --assume-role-policy-document file:///tmp/alb-trust-policy.json \
+      --description "IAM role for ALB Controller via Pod Identity"
+
+    aws iam attach-role-policy \
+      --role-name "$ALB_ROLE_NAME" \
+      --policy-arn "$ALB_POLICY_ARN"
+
+    echo -e "${GREEN}✅ ALB Controller IAM role created${NC}"
+  fi
+
+  ALB_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/${ALB_ROLE_NAME}"
 fi
 
-# Create Pod Identity association for ALB Controller BEFORE helm install
+# Step 5b: Create Pod Identity association (Role must exist first)
 EXISTING_ALB_ASSOC=$(aws eks list-pod-identity-associations \
   --cluster-name "$CLUSTER_NAME" \
   --region "$AWS_REGION" \
@@ -436,65 +490,10 @@ else
   echo -e "${GREEN}✅ ALB Controller Pod Identity association created${NC}"
 fi
 
+# Step 5c: Install Helm chart
 if helm list -n kube-system | grep -q aws-load-balancer-controller; then
   echo -e "${YELLOW}⚠️  ALB Controller already installed, skipping${NC}"
 else
-  if [ "$USE_CFN" = true ] && [ -n "$CFN_ALB_ROLE_ARN" ]; then
-    echo -e "${GREEN}Skipping ALB IAM policy/role creation (provided by CFN)${NC}"
-  else
-    # Use local IAM policy (partition-aware: global vs China)
-    if [ "$AWS_PARTITION" = "aws-cn" ]; then
-      cp "${TEMPLATE_DIR}/iam-policies/alb-controller-policy-cn.json" /tmp/iam_policy.json
-    else
-      cp "${TEMPLATE_DIR}/iam-policies/alb-controller-policy.json" /tmp/iam_policy.json
-    fi
-
-    # Create IAM policy
-    aws iam create-policy \
-      --policy-name AWSLoadBalancerControllerIAMPolicy \
-      --policy-document file:///tmp/iam_policy.json \
-      --region "$AWS_REGION" 2>/dev/null || echo "Policy already exists"
-
-    # Create IAM Role for ALB Controller (Pod Identity)
-    ALB_ROLE_NAME="AWSLoadBalancerControllerRole-${CLUSTER_NAME}"
-    ALB_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/AWSLoadBalancerControllerIAMPolicy"
-
-    if aws iam get-role --role-name "$ALB_ROLE_NAME" &>/dev/null; then
-      echo -e "${YELLOW}⚠️  ALB Controller Role already exists${NC}"
-    else
-      echo "Creating ALB Controller IAM role with Pod Identity trust policy..."
-      cat > /tmp/alb-trust-policy.json <<EOFTRUST
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "pods.eks.amazonaws.com"
-      },
-      "Action": [
-        "sts:AssumeRole",
-        "sts:TagSession"
-      ]
-    }
-  ]
-}
-EOFTRUST
-
-      aws iam create-role \
-        --role-name "$ALB_ROLE_NAME" \
-        --assume-role-policy-document file:///tmp/alb-trust-policy.json \
-        --description "IAM role for ALB Controller via Pod Identity"
-
-      aws iam attach-role-policy \
-        --role-name "$ALB_ROLE_NAME" \
-        --policy-arn "$ALB_POLICY_ARN"
-
-      echo -e "${GREEN}✅ ALB Controller IAM role created${NC}"
-    fi
-
-    ALB_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:role/${ALB_ROLE_NAME}"
-  fi
 
   # Add Helm repo
   helm repo add eks https://aws.github.io/eks-charts
