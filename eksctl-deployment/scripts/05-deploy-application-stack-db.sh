@@ -263,6 +263,17 @@ if aws iam get-policy --policy-arn "$PROVISIONING_POLICY_ARN" &>/dev/null; then
 }
 EOFPOLICY
 
+  # Delete oldest non-default policy versions to stay within the 5-version limit
+  OLD_VERSIONS=$(aws iam list-policy-versions \
+    --policy-arn "$PROVISIONING_POLICY_ARN" \
+    --query 'Versions[?IsDefaultVersion==`false`].VersionId' \
+    --output text)
+  for v in $OLD_VERSIONS; do
+    aws iam delete-policy-version \
+      --policy-arn "$PROVISIONING_POLICY_ARN" \
+      --version-id "$v" 2>/dev/null && echo "  Deleted old policy version: $v" || true
+  done
+
   # Create new version and set as default
   aws iam create-policy-version \
     --policy-arn "$PROVISIONING_POLICY_ARN" \
@@ -440,20 +451,8 @@ echo ""
 echo -e "${BLUE}[4/9] Building and pushing Docker image (optional)...${NC}"
 echo ""
 
-# Support BUILD_IMAGE env var for non-interactive use
-if [ -z "${BUILD_IMAGE:-}" ]; then
-  if [ -t 0 ]; then
-    echo "Do you want to build and push a new Docker image?"
-    echo "  yes - Build new image from source code"
-    echo "  no  - Skip and use existing image (default)"
-    echo ""
-    read -p "Build new image? (yes/no, default: no): " BUILD_IMAGE
-    BUILD_IMAGE=${BUILD_IMAGE:-no}
-  else
-    echo "Non-interactive mode detected, skipping image build (set BUILD_IMAGE=yes to override)"
-    BUILD_IMAGE="no"
-  fi
-fi
+# Skip image build by default; set BUILD_IMAGE=yes to build from source
+BUILD_IMAGE="${BUILD_IMAGE:-no}"
 
 if [[ "$BUILD_IMAGE" =~ ^[Yy](es)?$ ]]; then
   echo ""
@@ -853,7 +852,7 @@ if [ -z "$RESOURCES_DIR" ] || [ ! -d "$RESOURCES_DIR" ]; then
   echo -e "${YELLOW}⚠️  resources/ directory not found, skipping workshop setup${NC}"
 else
   # Create S3 bucket (idempotent)
-  if aws s3api head-bucket --bucket "$WORKSHOP_BUCKET" --region "$AWS_REGION" 2>/dev/null; then
+  if aws s3api head-bucket --bucket "$WORKSHOP_BUCKET" --region "$AWS_REGION" &>/dev/null; then
     echo "S3 bucket already exists: $WORKSHOP_BUCKET"
   else
     echo "Creating S3 bucket: $WORKSHOP_BUCKET"
@@ -864,10 +863,16 @@ else
         --create-bucket-configuration LocationConstraint="$AWS_REGION"
     fi
     aws s3api put-bucket-versioning --bucket "$WORKSHOP_BUCKET" \
-      --versioning-configuration Status=Enabled
+      --versioning-configuration Status=Enabled 2>/dev/null \
+      && echo "  Bucket versioning enabled" \
+      || echo -e "${YELLOW}⚠️  Could not enable bucket versioning (permission denied, skipping — not critical)${NC}"
+    # Note: Since April 2023, new S3 buckets block public access by default.
+    # This call is a defense-in-depth measure; skip gracefully if permission is missing.
     aws s3api put-public-access-block --bucket "$WORKSHOP_BUCKET" \
       --public-access-block-configuration \
-      BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+      BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true 2>/dev/null \
+      && echo "  Public access block configured" \
+      || echo -e "${YELLOW}⚠️  Could not set public access block (permission denied, skipping — new buckets block public access by default)${NC}"
   fi
 
   # Upload workshop resource files
@@ -885,9 +890,9 @@ else
     # Patch provisioning service with workshop env vars (runtimeDeps + selfConfigure)
     echo "Patching provisioning service for workshop support..."
     # Ensure deployment uses the private ECR image (contains env-var-driven code)
-    PRIVATE_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest"
-    kubectl set image deployment/openclaw-provisioning -n openclaw-provisioning \
-      provisioning="$PRIVATE_IMAGE"
+    #PRIVATE_IMAGE="${AWS_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/openclaw-provisioning:latest"
+    # kubectl set image deployment/openclaw-provisioning -n openclaw-provisioning \
+    #   provisioning="$PRIVATE_IMAGE"
     kubectl set env deployment/openclaw-provisioning -n openclaw-provisioning \
       OPENCLAW_RUNTIME_PNPM=true \
       OPENCLAW_RUNTIME_PYTHON=true \
