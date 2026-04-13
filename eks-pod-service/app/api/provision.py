@@ -29,7 +29,8 @@ def provision():
             "resources": {
                 "requests": {"cpu": "1", "memory": "2Gi"}
             }
-        }
+        },
+        "use_karpenter": false  # optional, schedule on Karpenter NodePool nodes
     }
 
     Response (201 Created):
@@ -64,6 +65,9 @@ def provision():
         data = request.get_json() or {}
         custom_config = data.get('config', {})
 
+        # Get Karpenter scheduling preference (default: False)
+        use_karpenter = data.get('use_karpenter', False)
+
         # Get provider choice (default: bedrock)
         provider = data.get('provider', 'bedrock')
         if provider not in ('bedrock', 'siliconflow'):
@@ -96,7 +100,7 @@ def provision():
         namespace = f"openclaw-{user_id}"
         instance_name = f"openclaw-{user_id}"
 
-        logger.info(f"📥 Provisioning request: {user_email} (user_id: {user_id}, provider: {provider})")
+        logger.info(f"📥 Provisioning request: {user_email} (user_id: {user_id}, provider: {provider}, karpenter: {use_karpenter})")
 
         # Initialize K8s client
         k8s_client = K8sClient()
@@ -152,7 +156,8 @@ def provision():
             role_arn=role_arn,
             provider=provider,
             siliconflow_api_key=siliconflow_api_key,
-            model=selected_model
+            model=selected_model,
+            use_karpenter=use_karpenter
         )
 
         # Build response
