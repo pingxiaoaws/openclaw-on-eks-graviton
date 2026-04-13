@@ -7,7 +7,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None, role_arn=None, provider='bedrock', siliconflow_api_key=None, model=None):
+def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None, role_arn=None, provider='bedrock', siliconflow_api_key=None, model=None, use_karpenter=False):
     """
     Create an OpenClawInstance CRD
 
@@ -22,6 +22,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         provider: LLM provider - 'bedrock' or 'siliconflow' (default: 'bedrock')
         siliconflow_api_key: SiliconFlow API key (required when provider='siliconflow')
         model: Model ID override (optional, works for both bedrock and siliconflow)
+        use_karpenter: Whether to schedule on Karpenter NodePool nodes (default: False)
 
     Returns:
         Tuple of (instance, created)
@@ -35,6 +36,22 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
     if custom_config:
         _deep_merge(config, custom_config)
     logger.info(f"🔍 MERGED runtime_class={config.get('runtime_class')}, node_selector={config.get('node_selector')}")
+
+    # Apply Karpenter nodeSelector and tolerations if requested
+    if use_karpenter:
+        nodepool_name = Config.KARPENTER_NODEPOOL_NAME
+        config['node_selector'] = {
+            **config.get('node_selector', {}),
+            'karpenter.sh/nodepool': nodepool_name
+        }
+        taint_key = Config.KARPENTER_TAINT_KEY
+        if taint_key:
+            config['tolerations'] = config.get('tolerations', []) + [{
+                'key': taint_key,
+                'operator': 'Exists',
+                'effect': 'NoSchedule'
+            }]
+        logger.info(f"🚀 Karpenter scheduling enabled: nodepool={nodepool_name}, node_selector={config['node_selector']}, tolerations={config['tolerations']}")
 
     # Build config.raw based on provider
     if provider == 'siliconflow':

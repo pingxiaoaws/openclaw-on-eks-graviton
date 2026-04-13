@@ -179,6 +179,11 @@ class Config:
     # 使用 Public ALB 模式（覆盖内部 ALB 配置）
     USE_PUBLIC_ALB = os.environ.get('USE_PUBLIC_ALB', 'true').lower() == 'true'
 
+    # Karpenter 调度配置
+    USE_KARPENTER = os.environ.get('USE_KARPENTER', 'false').lower() == 'true'
+    KARPENTER_NODEPOOL_NAME = os.environ.get('KARPENTER_NODEPOOL_NAME', 'default')
+    KARPENTER_TAINT_KEY = os.environ.get('KARPENTER_TAINT_KEY', '')  # e.g. 'karpenter.sh/nodepool' if NodePool has taints
+
     # Billing sidecar configuration
     BILLING_SIDECAR_ENABLED = os.environ.get('BILLING_SIDECAR_ENABLED', 'true').lower() == 'true'
     BILLING_SIDECAR_IMAGE = os.environ.get('BILLING_SIDECAR_IMAGE', '')  # e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/billing-sidecar:latest

@@ -845,6 +845,56 @@ echo ""
 
 echo -e "${BLUE}[10] Preparing Workshop Data...${NC}"
 
+# --- S3 Workshop IAM Policy (idempotent) ---
+S3_WORKSHOP_POLICY_NAME="S3WorkshopAccess"
+S3_WORKSHOP_POLICY_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT}:policy/${S3_WORKSHOP_POLICY_NAME}"
+S3_WORKSHOP_ROLE_NAME="openclaw-prod-ide-role"
+
+if aws iam get-policy --policy-arn "$S3_WORKSHOP_POLICY_ARN" &>/dev/null; then
+  echo -e "${YELLOW}⚠️  S3WorkshopAccess policy already exists${NC}"
+else
+  echo "Creating S3WorkshopAccess IAM policy..."
+  cat > /tmp/s3-workshop-policy.json <<EOFPOLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetBucketLocation",
+        "s3:CreateBucket",
+        "s3:PutBucketVersioning",
+        "s3:PutBucketPublicAccessBlock"
+      ],
+      "Resource": [
+        "arn:${AWS_PARTITION}:s3:::openclaw-user-files-*",
+        "arn:${AWS_PARTITION}:s3:::openclaw-user-files-*/*"
+      ]
+    }
+  ]
+}
+EOFPOLICY
+
+  aws iam create-policy \
+    --policy-name "$S3_WORKSHOP_POLICY_NAME" \
+    --policy-document file:///tmp/s3-workshop-policy.json \
+    --description "Allow OpenClaw IDE instances to manage S3 workshop buckets"
+
+  echo -e "${GREEN}✅ S3WorkshopAccess IAM policy created${NC}"
+fi
+
+# Attach to IDE role (idempotent — attach-role-policy is a no-op if already attached)
+if aws iam get-role --role-name "$S3_WORKSHOP_ROLE_NAME" &>/dev/null; then
+  aws iam attach-role-policy \
+    --role-name "$S3_WORKSHOP_ROLE_NAME" \
+    --policy-arn "$S3_WORKSHOP_POLICY_ARN" 2>/dev/null || true
+  echo -e "${GREEN}✅ S3WorkshopAccess attached to ${S3_WORKSHOP_ROLE_NAME}${NC}"
+else
+  echo -e "${YELLOW}⚠️  Role ${S3_WORKSHOP_ROLE_NAME} not found, skipping policy attachment${NC}"
+fi
+
 WORKSHOP_BUCKET="openclaw-user-files-${AWS_ACCOUNT}-${AWS_REGION}"
 RESOURCES_DIR="$(cd "${SCRIPT_DIR}/../../resources" 2>/dev/null && pwd)" || RESOURCES_DIR=""
 
