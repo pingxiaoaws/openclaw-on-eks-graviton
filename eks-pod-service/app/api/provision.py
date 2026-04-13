@@ -65,8 +65,8 @@ def provision():
         data = request.get_json() or {}
         custom_config = data.get('config', {})
 
-        # Get Karpenter scheduling preference (default: False)
-        use_karpenter = data.get('use_karpenter', False)
+        # Get Karpenter scheduling preference: API param overrides env var default
+        use_karpenter = data.get('use_karpenter', Config.USE_KARPENTER)
 
         # Get provider choice (default: bedrock)
         provider = data.get('provider', 'bedrock')
