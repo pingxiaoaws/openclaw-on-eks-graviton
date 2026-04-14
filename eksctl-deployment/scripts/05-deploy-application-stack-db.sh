@@ -891,6 +891,8 @@ if aws iam get-role --role-name "$S3_WORKSHOP_ROLE_NAME" &>/dev/null; then
     --role-name "$S3_WORKSHOP_ROLE_NAME" \
     --policy-arn "$S3_WORKSHOP_POLICY_ARN" 2>/dev/null || true
   echo -e "${GREEN}✅ S3WorkshopAccess attached to ${S3_WORKSHOP_ROLE_NAME}${NC}"
+  echo "Waiting for IAM policy propagation..."
+  sleep 10
 else
   echo -e "${YELLOW}⚠️  Role ${S3_WORKSHOP_ROLE_NAME} not found, skipping policy attachment${NC}"
 fi
@@ -929,8 +931,15 @@ else
   UPLOAD_COUNT=0
   for f in "$RESOURCES_DIR"/SKILL_*.md "$RESOURCES_DIR"/*.csv; do
     [ -f "$f" ] || continue
-    aws s3 cp "$f" "s3://${WORKSHOP_BUCKET}/workshop_data/$(basename "$f")" --quiet
-    UPLOAD_COUNT=$((UPLOAD_COUNT + 1))
+    if aws s3 cp "$f" "s3://${WORKSHOP_BUCKET}/workshop_data/$(basename "$f")" --quiet; then
+      UPLOAD_COUNT=$((UPLOAD_COUNT + 1))
+    else
+      echo -e "${YELLOW}⚠️  Failed to upload $(basename "$f"), retrying in 5s...${NC}"
+      sleep 5
+      aws s3 cp "$f" "s3://${WORKSHOP_BUCKET}/workshop_data/$(basename "$f")" --quiet \
+        && UPLOAD_COUNT=$((UPLOAD_COUNT + 1)) \
+        || echo -e "${RED}❌ Failed to upload $(basename "$f")${NC}"
+    fi
   done
 
   if [ "$UPLOAD_COUNT" -gt 0 ]; then
