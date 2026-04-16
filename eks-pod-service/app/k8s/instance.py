@@ -233,7 +233,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         "spec": {
             "image": config['image'],
             "config": {
-                "mergeMode": "overwrite",
+                "mergeMode": "merge",
                 "raw": config_raw
             },
             "resources": config['resources'],
@@ -344,8 +344,7 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         if skills:
             instance_body["spec"]["skills"] = [s.strip() for s in skills.split(',') if s.strip()]
         # Channels are configured by users at runtime via `openclaw channels add`.
-        # mergeMode: overwrite uses raw config as-is, avoiding operator default merges
-        # (which inject legacy keys like bedrockDiscovery on older operator versions).
+        # mergeMode: merge allows operator reconciliation while preserving user config.
         logger.info(f"✅ Added AWS_REGION={Config.AWS_REGION}, selfConfigure={self_configure}, runtimeDeps={runtime_deps}")
 
     # Add billing sidecar if enabled and image is configured
