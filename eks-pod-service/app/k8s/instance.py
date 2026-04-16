@@ -7,7 +7,8 @@ import os
 
 # Version where OpenClaw switched from models.bedrockDiscovery to
 # plugins.entries.amazon-bedrock.config.discovery (plugin-based)
-_PLUGIN_BEDROCK_CUTOFF = (2026, 1, 1)
+# Changed in 2026.4.5
+_PLUGIN_BEDROCK_CUTOFF = (2026, 4, 5)
 
 def _is_new_openclaw_version(tag: str) -> bool:
     """
@@ -15,8 +16,8 @@ def _is_new_openclaw_version(tag: str) -> bool:
     plugin-based Bedrock config (plugins.entries.amazon-bedrock.config.discovery)
     rather than the old models.bedrockDiscovery key.
 
-    Tags >= 2026.1.1 or 'latest' => new plugin format.
-    Tags < 2026.1.1 or unrecognized => old bedrockDiscovery format.
+    Tags >= 2026.4.5 or 'latest' => new plugin format.
+    Tags < 2026.4.5 or unrecognized => old bedrockDiscovery format.
     """
     if not tag or tag in ('latest', 'main-latest', 'main'):
         return True  # assume latest = new format
