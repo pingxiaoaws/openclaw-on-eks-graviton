@@ -43,7 +43,7 @@ variable "openclaw_namespace" {
 variable "provisioning_image" {
   description = "Docker image for the provisioning service"
   type        = string
-  default     = "public.ecr.aws/u6t0z4w2/openclaw-provisioning-chinaregion:latest"
+  default     = "public.ecr.aws/i6v0m5n6/openclaw-provisioning-chinaregion:latest"
 }
 
 variable "openclaw_version" {
