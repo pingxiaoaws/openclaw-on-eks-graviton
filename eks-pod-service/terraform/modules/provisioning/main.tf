@@ -484,6 +484,16 @@ resource "kubernetes_deployment_v1" "provisioning" {
             value = var.openclaw_version
           }
 
+          # Ingress mode: standalone internet-facing ALB per instance
+          env {
+            name  = "INGRESS_STANDALONE"
+            value = "true"
+          }
+          env {
+            name  = "USE_PUBLIC_ALB"
+            value = "false"
+          }
+
           # Karpenter scheduling & runtime class
           env {
             name  = "KARPENTER_NODEPOOL_NAME"

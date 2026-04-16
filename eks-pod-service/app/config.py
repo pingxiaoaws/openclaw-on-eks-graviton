@@ -128,7 +128,8 @@ class Config:
     INGRESS_ENABLED = os.environ.get('INGRESS_ENABLED', 'true').lower() == 'true'
     INGRESS_CLASS = os.environ.get('INGRESS_CLASS', 'alb')
     INGRESS_GROUP_NAME = os.environ.get('INGRESS_GROUP_NAME', 'openclaw-shared-instances')
-    INGRESS_SCHEME = os.environ.get('INGRESS_SCHEME', 'internal')  # Internal ALB（不暴露公网）
+    INGRESS_SCHEME = os.environ.get('INGRESS_SCHEME', 'internal')  # Internal ALB（不暴露公网），Workshop 设为 internet-facing
+    INGRESS_STANDALONE = os.environ.get('INGRESS_STANDALONE', 'false').lower() == 'true'  # 每实例独立 ALB，路径 /
     INGRESS_TARGET_TYPE = os.environ.get('INGRESS_TARGET_TYPE', 'ip')  # IP mode for better performance
 
     # API Gateway 配置（用于构建外部访问 URL）

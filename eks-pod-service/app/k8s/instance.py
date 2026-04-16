@@ -83,7 +83,8 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         config_raw = {
             "gateway": {
                 "controlUi": {
-                    "allowedOrigins": Config.GATEWAY_CONFIG["allowedOrigins"]
+                    "allowedOrigins": Config.GATEWAY_CONFIG["allowedOrigins"],
+                    "dangerouslyAllowHostHeaderOriginFallback": True
                 },
                 "trustedProxies": Config.GATEWAY_CONFIG["trustedProxies"]
             },
@@ -117,7 +118,8 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
         config_raw = {
             "gateway": {
                 "controlUi": {
-                    "allowedOrigins": Config.GATEWAY_CONFIG["allowedOrigins"]
+                    "allowedOrigins": Config.GATEWAY_CONFIG["allowedOrigins"],
+                    "dangerouslyAllowHostHeaderOriginFallback": True
                 },
                 "trustedProxies": Config.GATEWAY_CONFIG["trustedProxies"]
             },
@@ -421,7 +423,28 @@ def _build_ingress_config(user_id):
     Returns:
         Dict: Ingress configuration
     """
-    if Config.USE_PUBLIC_ALB:
+    if Config.INGRESS_STANDALONE:
+        # Workshop mode: one internet-facing ALB per instance, path /, no CloudFront
+        config = {
+            "enabled": True,
+            "className": Config.INGRESS_CLASS,
+            "annotations": {
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/scheme": "internet-facing",
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/target-type": "ip",
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-path": "/health",
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/healthcheck-protocol": "HTTP",
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/success-codes": "200",
+                f"{Config.INGRESS_CLASS}.ingress.kubernetes.io/target-group-attributes": (
+                    "stickiness.enabled=true,"
+                    "stickiness.type=lb_cookie,"
+                    "stickiness.lb_cookie.duration_seconds=3600"
+                ),
+            },
+            "hosts": [{"host": "", "paths": [{"path": "/", "pathType": "Prefix"}]}]
+        }
+        logger.info(f"✅ Standalone internet-facing ALB Ingress for user {user_id}")
+
+    elif Config.USE_PUBLIC_ALB:
         # Public ALB + CloudFront 模式
         config = {
             "enabled": True,
