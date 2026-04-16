@@ -145,10 +145,6 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                         ]
                     }
                 },
-                "bedrockDiscovery": {
-                    "enabled": True,
-                    "region": Config.AWS_REGION
-                }
             },
             "agents": {
                 "defaults": {
