@@ -5,6 +5,28 @@ import logging
 import copy
 import os
 
+# Version where OpenClaw switched from models.bedrockDiscovery to
+# plugins.entries.amazon-bedrock.config.discovery (plugin-based)
+_PLUGIN_BEDROCK_CUTOFF = (2026, 1, 1)
+
+def _is_new_openclaw_version(tag: str) -> bool:
+    """
+    Return True if the image tag indicates a version that uses the new
+    plugin-based Bedrock config (plugins.entries.amazon-bedrock.config.discovery)
+    rather than the old models.bedrockDiscovery key.
+
+    Tags >= 2026.1.1 or 'latest' => new plugin format.
+    Tags < 2026.1.1 or unrecognized => old bedrockDiscovery format.
+    """
+    if not tag or tag in ('latest', 'main-latest', 'main'):
+        return True  # assume latest = new format
+    try:
+        parts = tag.split('.')
+        version = tuple(int(p) for p in parts[:3])
+        return version >= _PLUGIN_BEDROCK_CUTOFF
+    except (ValueError, IndexError):
+        return True  # unrecognized format, assume new
+
 logger = logging.getLogger(__name__)
 
 def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito_sub=None, custom_config=None, role_arn=None, provider='bedrock', siliconflow_api_key=None, model=None, use_karpenter=False):
@@ -154,6 +176,29 @@ def create_openclaw_instance(k8s_client, user_id, namespace, user_email, cognito
                 }
             }
         }
+
+        # Add Bedrock discovery config based on OpenClaw version
+        image_tag = config.get('image', {}).get('tag', 'latest')
+        if _is_new_openclaw_version(image_tag):
+            # New plugin-based discovery (>= 2026.1.1)
+            config_raw["plugins"] = {
+                "entries": {
+                    "amazon-bedrock": {
+                        "config": {
+                            "discovery": {
+                                "enabled": True,
+                                "region": Config.AWS_REGION
+                            }
+                        }
+                    }
+                }
+            }
+        else:
+            # Legacy discovery (< 2026.1.1)
+            config_raw["models"]["bedrockDiscovery"] = {
+                "enabled": True,
+                "region": Config.AWS_REGION
+            }
 
     # Build labels
     labels = {
