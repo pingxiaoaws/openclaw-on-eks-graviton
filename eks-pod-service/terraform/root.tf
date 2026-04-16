@@ -105,3 +105,20 @@ variable "openclaw_image_repository" {
   type        = string
   default     = "ghcr.io/openclaw/openclaw"
 }
+
+################################################################################
+# Outputs
+################################################################################
+
+output "provisioning_url" {
+  description = "Internet-facing URL of the provisioning service"
+  value       = module.provisioning.url
+}
+
+# Write to SSM so CodeBuild post_build can surface it
+resource "aws_ssm_parameter" "provisioning_url" {
+  name  = "/${var.cluster_name}/provisioning-url"
+  type  = "String"
+  value = module.provisioning.url
+  overwrite = true
+}

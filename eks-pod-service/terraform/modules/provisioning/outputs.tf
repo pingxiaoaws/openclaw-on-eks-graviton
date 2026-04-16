@@ -26,3 +26,8 @@ output "postgres_service" {
   description = "PostgreSQL service endpoint (hostname:port) within the cluster"
   value       = "${kubernetes_service_v1.postgres.metadata[0].name}.${var.namespace}.svc.cluster.local:5432"
 }
+
+output "url" {
+  description = "Internet-facing URL of the provisioning service (ALB DNS)"
+  value       = "http://${kubernetes_ingress_v1.provisioning.status[0].load_balancer[0].ingress[0].hostname}"
+}

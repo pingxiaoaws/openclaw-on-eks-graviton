@@ -655,3 +655,45 @@ resource "kubernetes_horizontal_pod_autoscaler_v2" "provisioning" {
     }
   }
 }
+
+################################################################################
+# Internet-facing ALB Ingress
+################################################################################
+
+resource "kubernetes_ingress_v1" "provisioning" {
+  metadata {
+    name      = "openclaw-provisioning"
+    namespace = kubernetes_namespace_v1.provisioning.metadata[0].name
+    annotations = {
+      "kubernetes.io/ingress.class"                    = "alb"
+      "alb.ingress.kubernetes.io/scheme"               = "internet-facing"
+      "alb.ingress.kubernetes.io/target-type"          = "ip"
+      "alb.ingress.kubernetes.io/healthcheck-path"     = "/health"
+      "alb.ingress.kubernetes.io/healthcheck-protocol" = "HTTP"
+      "alb.ingress.kubernetes.io/tags"                 = "ManagedBy=terraform,Component=provisioning-service"
+    }
+  }
+
+  spec {
+    rule {
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+          backend {
+            service {
+              name = kubernetes_service_v1.provisioning.metadata[0].name
+              port {
+                number = 80
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  wait_for_load_balancer = true
+
+  depends_on = [kubernetes_deployment_v1.provisioning]
+}
