@@ -484,6 +484,20 @@ resource "kubernetes_deployment_v1" "provisioning" {
             value = var.openclaw_version
           }
 
+          # Karpenter scheduling & runtime class
+          env {
+            name  = "KARPENTER_NODEPOOL_NAME"
+            value = var.karpenter_nodepool_name
+          }
+          env {
+            name  = "KARPENTER_TAINT_KEY"
+            value = var.karpenter_taint_key
+          }
+          env {
+            name  = "OPENCLAW_RUNTIME_CLASS"
+            value = var.openclaw_runtime_class
+          }
+
           # PostgreSQL
           env {
             name  = "POSTGRES_HOST"

@@ -93,3 +93,21 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "karpenter_nodepool_name" {
+  description = "Karpenter NodePool name for provisioned instances"
+  type        = string
+  default     = "standard-arm64"
+}
+
+variable "karpenter_taint_key" {
+  description = "Karpenter taint key for NodePool (empty = no taint)"
+  type        = string
+  default     = ""
+}
+
+variable "openclaw_runtime_class" {
+  description = "Kubernetes RuntimeClass for provisioned instances (empty = default runc)"
+  type        = string
+  default     = ""
+}
