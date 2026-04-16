@@ -33,8 +33,8 @@ data "aws_eks_cluster_auth" "this" {
   name = var.cluster_name
 }
 
-data "aws_ssm_parameter" "bedrock_role_arn" {
-  name = "/${var.cluster_name}/bedrock-role-arn"
+data "aws_iam_role" "bedrock" {
+  name = "${var.cluster_name}-openclaw-bedrock"
 }
 
 provider "kubernetes" {
@@ -60,7 +60,7 @@ module "provisioning" {
   cluster_name        = var.cluster_name
   cluster_oidc_issuer = local.oidc_issuer
   oidc_provider_arn   = local.oidc_provider_arn
-  bedrock_role_arn    = data.aws_ssm_parameter.bedrock_role_arn.value
+  bedrock_role_arn    = data.aws_iam_role.bedrock.arn
 
   openclaw_version         = var.openclaw_version
   provisioning_image       = var.provisioning_image
